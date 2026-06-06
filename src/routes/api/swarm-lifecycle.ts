@@ -7,6 +7,14 @@ import {
   notifyHandoffWritten,
   renewWorker,
   requestWorkerHandoff,
+  startOrResumeSwarm,
+  pauseSwarm,
+  resumeSwarm,
+  markBlocked,
+  markNeedsReview,
+  markReady,
+  completeSwarm,
+  recoverRuntime,
 } from '../../server/swarm-lifecycle'
 import { listSwarmWorkerIds } from '../../server/swarm-foundation'
 import { isSwarmWorkerId } from '../../server/swarm-roster'
@@ -41,6 +49,11 @@ export const Route = createFileRoute('/api/swarm-lifecycle')({
           const sweep = await autoSweepLifecycle(targets)
           return json({ ok: true, action, sweep })
         }
+        if (action === 'start-or-resume') {
+          const swarmId = typeof body.workerId === 'string' ? body.workerId : undefined
+          const result = await startOrResumeSwarm(swarmId)
+          return json({ ok: true, action, ...result })
+        }
         if (!workerIdMaybe) return json({ ok: false, error: 'workerId required' }, { status: 400 })
         const workerId = workerIdMaybe
         if (action === 'request-handoff') {
@@ -53,6 +66,34 @@ export const Route = createFileRoute('/api/swarm-lifecycle')({
         }
         if (action === 'notify-handoff-written') {
           notifyHandoffWritten(workerId)
+          return json({ ok: true, workerId, action })
+        }
+        if (action === 'pause') {
+          await pauseSwarm(workerId)
+          return json({ ok: true, workerId, action })
+        }
+        if (action === 'resume') {
+          await resumeSwarm(workerId)
+          return json({ ok: true, workerId, action })
+        }
+        if (action === 'mark-blocked') {
+          await markBlocked(workerId, '')
+          return json({ ok: true, workerId, action })
+        }
+        if (action === 'mark-needs-review') {
+          await markNeedsReview(workerId)
+          return json({ ok: true, workerId, action })
+        }
+        if (action === 'mark-ready') {
+          await markReady(workerId)
+          return json({ ok: true, workerId, action })
+        }
+        if (action === 'complete') {
+          await completeSwarm(workerId)
+          return json({ ok: true, workerId, action })
+        }
+        if (action === 'recover-runtime') {
+          await recoverRuntime(workerId)
           return json({ ok: true, workerId, action })
         }
         return json({ ok: false, error: 'Unsupported action' }, { status: 400 })

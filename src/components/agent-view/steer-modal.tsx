@@ -9,11 +9,35 @@ import {
 import { toast } from '@/components/ui/toast'
 import { steerAgent } from '@/lib/gateway-api'
 
+type SteerMode = 'send_guidance' | 'reroute' | 'escalate_review'
+
+const MODE_COPY: Record<SteerMode, { title: string; submit: string; placeholder: string; description: string }> = {
+  send_guidance: {
+    title: 'Send guidance',
+    submit: 'Send guidance',
+    placeholder: 'What should the agent do next?',
+    description: 'Send a directive to influence this agent’s next steps.',
+  },
+  reroute: {
+    title: 'Reroute',
+    submit: 'Reroute',
+    placeholder: 'Describe the new direction for this agent…',
+    description: 'Redirect the agent to a different approach or task.',
+  },
+  escalate_review: {
+    title: 'Escalate for review',
+    submit: 'Escalate',
+    placeholder: 'Describe the issue that needs human review…',
+    description: 'Flag this agent’s work for human review.',
+  },
+}
+
 type SteerModalProps = {
   open: boolean
   agentName: string
   sessionKey?: string
   onOpenChange: (open: boolean) => void
+  mode?: SteerMode
 }
 
 export function SteerModal({
@@ -21,7 +45,9 @@ export function SteerModal({
   agentName,
   sessionKey,
   onOpenChange,
+  mode = 'send_guidance',
 }: SteerModalProps) {
+  const copy = MODE_COPY[mode]
   const [message, setMessage] = useState('')
   const [pending, setPending] = useState(false)
 
@@ -40,7 +66,7 @@ export function SteerModal({
     setPending(true)
     try {
       await steerAgent(normalizedSessionKey, trimmedMessage)
-      toast(`Directive sent to ${agentName}`, { type: 'success' })
+      toast(`${copy.submit} sent to ${agentName}`, { type: 'success' })
       setMessage('')
       onOpenChange(false)
     } catch (error) {
@@ -57,16 +83,14 @@ export function SteerModal({
       <DialogContent className="w-[min(560px,92vw)]">
         <div className="space-y-4 p-5">
           <div className="space-y-1">
-            <DialogTitle className="text-base">Steer: {agentName}</DialogTitle>
-            <DialogDescription>
-              Send a directive to influence this agent&apos;s next steps.
-            </DialogDescription>
+            <DialogTitle className="text-base">{copy.title}: {agentName}</DialogTitle>
+            <DialogDescription>{copy.description}</DialogDescription>
           </div>
 
           <textarea
             value={message}
             rows={5}
-            placeholder="Send a directive to this agent..."
+            placeholder={copy.placeholder}
             disabled={pending}
             onChange={function onChangeMessage(event) {
               setMessage(event.target.value)
@@ -93,7 +117,7 @@ export function SteerModal({
               }}
               className="bg-accent-500 text-white hover:bg-accent-600"
             >
-              {pending ? 'Sending...' : 'Send'}
+              {pending ? `${copy.submit}…` : copy.submit}
             </Button>
           </div>
         </div>

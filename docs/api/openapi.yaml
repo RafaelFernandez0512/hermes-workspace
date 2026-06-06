@@ -1,0 +1,505 @@
+openapi: 3.1.0
+info:
+  title: Hermes Workspace API
+  version: 2.1.0
+  description: Internal API for Hermes Workspace — task management, swarm orchestration, and profile configuration.
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    Task:
+      type: object
+      required: [id, title, column, priority, tags, created_at, updated_at]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        column:
+          type: string
+          enum: [backlog, todo, in_progress, review, blocked, done, deleted]
+        priority:
+          type: string
+          enum: [high, medium, low]
+        assignee: { type: string, nullable: true }
+        tags:
+          type: array
+          items: { type: string }
+        due_date: { type: string, format: date, nullable: true }
+        session_id: { type: string, nullable: true }
+        blocked_reason: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        latestRun:
+          $ref: '#/components/schemas/TaskLatestRun'
+          nullable: true
+
+    TaskLatestRun:
+      type: object
+      nullable: true
+      properties:
+        summary: { type: string, nullable: true }
+        outcome: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        activities:
+          type: array
+          items: { type: string }
+        metadata: { type: object, nullable: true }
+
+    TaskComment:
+      type: object
+      required: [id, task_id, author, body, created_at]
+      properties:
+        id: { type: string }
+        task_id: { type: string }
+        author: { type: string }
+        body: { type: string }
+        action:
+          type: string
+          nullable: true
+          enum:
+            [
+              approve,
+              approve_and_requeue,
+              request_changes,
+              retry,
+              reject,
+              system,
+              null,
+            ]
+        created_at: { type: string, format: date-time }
+
+    SwarmMission:
+      type: object
+      required: [id, title, state, createdAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        state:
+          type: string
+          enum: [pending, running, complete, cancelled, archived]
+        createdAt: { type: integer, description: Unix ms timestamp }
+        archivedAt: { type: integer, nullable: true }
+        cancelledAt: { type: integer, nullable: true }
+
+    SwarmKanbanCard:
+      type: object
+      required: [id, title, status, createdAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        spec: { type: string }
+        assignedWorker: { type: string, nullable: true }
+        status:
+          type: string
+          enum: [backlog, todo, ready, running, review, blocked, done, archived]
+        missionId: { type: string, nullable: true }
+        origin:
+          type: string
+          enum: [swarm, manual, agent]
+          default: manual
+        swarmId: { type: string, nullable: true }
+        createdAt: { type: integer }
+        updatedAt: { type: integer }
+        archivedAt: { type: integer, nullable: true }
+        isDeleted: { type: boolean, default: false }
+
+    ProfileSummary:
+      type: object
+      required: [name, active, exists]
+      properties:
+        name: { type: string }
+        active: { type: boolean }
+        exists: { type: boolean }
+        model: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        skillCount: { type: integer }
+        sessionCount: { type: integer }
+        hasEnv: { type: boolean }
+        updatedAt: { type: string, format: date-time, nullable: true }
+
+    CleanupCounts:
+      type: object
+      properties:
+        orphanedCards: { type: integer }
+        archivedMissions: { type: integer }
+        archivedCards: { type: integer }
+        staleSessions: { type: integer }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+paths:
+  # ── Tasks ──────────────────────────────────────────────────────────────────
+
+  /api/hermes-tasks:
+    get:
+      summary: List tasks
+      parameters:
+        - name: column
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+        - name: includeArchived
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Task list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items: { $ref: '#/components/schemas/Task' }
+        '401': { description: Unauthorized }
+
+  /api/hermes-tasks/{taskId}:
+    parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema: { type: string }
+
+    get:
+      summary: Get task detail
+      parameters:
+        - name: include
+          in: query
+          description: Comma-separated list of extra fields to include
+          schema:
+            type: string
+            example: recap,activity,comments,session
+      responses:
+        '200':
+          description: Task with comments and optional extras
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task: { $ref: '#/components/schemas/Task' }
+                  comments:
+                    type: array
+                    items: { $ref: '#/components/schemas/TaskComment' }
+        '401': { description: Unauthorized }
+        '404': { description: Not found }
+
+    post:
+      summary: Perform a task action
+      parameters:
+        - name: action
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              [
+                approve,
+                approve-and-requeue,
+                request-changes,
+                retry,
+                reject,
+                cancel,
+                archive,
+                comment,
+                launch,
+                move,
+              ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+                author: { type: string }
+                body: { type: string, description: 'Used for action=comment' }
+                reason: { type: string }
+                column: { type: string, description: 'Used for action=move' }
+      responses:
+        '200':
+          description: Action result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  task: { $ref: '#/components/schemas/Task' }
+                  comment: { $ref: '#/components/schemas/TaskComment' }
+        '400': { description: Bad request }
+        '401': { description: Unauthorized }
+        '404': { description: Not found }
+
+  # ── Swarm Missions ─────────────────────────────────────────────────────────
+
+  /api/swarm-missions/{missionId}/archive:
+    post:
+      summary: Archive a swarm mission (cascades to kanban cards)
+      parameters:
+        - name: missionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actor: { type: string }
+                reason: { type: string }
+      responses:
+        '200':
+          description: Archive result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  archivedCardIds:
+                    type: array
+                    items: { type: string }
+        '401': { description: Unauthorized }
+        '404': { description: Not found }
+
+  /api/swarm-missions/{missionId}/unarchive:
+    post:
+      summary: Restore an archived swarm mission
+      parameters:
+        - name: missionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Unarchive result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '401': { description: Unauthorized }
+        '404': { description: Not found }
+
+  /api/swarm-missions/{missionId}/delete:
+    delete:
+      summary: Delete a swarm mission (requires cancelled or archived state)
+      parameters:
+        - name: missionId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: force
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Delete result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  deletedCardIds:
+                    type: array
+                    items: { type: string }
+        '400': { description: Mission not in terminal state }
+        '401': { description: Unauthorized }
+        '404': { description: Not found }
+
+  # ── Swarm Kanban ───────────────────────────────────────────────────────────
+
+  /api/swarm-kanban/{cardId}/archive:
+    post:
+      summary: Archive a kanban card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                actor: { type: string }
+                reason: { type: string }
+      responses:
+        '200':
+          description: Archived card
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  card: { $ref: '#/components/schemas/SwarmKanbanCard' }
+        '401': { description: Unauthorized }
+        '404': { description: Not found }
+
+  /api/swarm-kanban/{cardId}/unarchive:
+    post:
+      summary: Restore an archived kanban card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Restored card
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  card: { $ref: '#/components/schemas/SwarmKanbanCard' }
+        '401': { description: Unauthorized }
+        '404': { description: Not found }
+
+  # ── Admin Cleanup ──────────────────────────────────────────────────────────
+
+  /api/admin/cleanup:
+    get:
+      summary: Run or preview lifecycle cleanup
+      parameters:
+        - name: dry-run
+          in: query
+          schema: { type: boolean, default: false }
+        - name: orphans
+          in: query
+          schema: { type: boolean, default: false }
+        - name: archived
+          in: query
+          schema: { type: boolean, default: false }
+        - name: stale-sessions
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Cleanup result or preview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dryRun: { type: boolean }
+                  counts: { $ref: '#/components/schemas/CleanupCounts' }
+                  orphanedCardIds:
+                    type: array
+                    items: { type: string }
+                  archivedMissionIds:
+                    type: array
+                    items: { type: string }
+        '401': { description: Unauthorized }
+
+  # ── Profiles ───────────────────────────────────────────────────────────────
+
+  /api/profiles:
+    get:
+      summary: List profiles
+      responses:
+        '200':
+          description: Profile list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProfileSummary' }
+                  activeProfile: { type: string }
+        '401': { description: Unauthorized }
+
+  /api/profiles/create:
+    post:
+      summary: Create a new profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                cloneFrom: { type: string }
+                model: { type: string }
+                provider: { type: string }
+      responses:
+        '200':
+          description: Created profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile: { $ref: '#/components/schemas/ProfileSummary' }
+        '400':
+          description: Validation error (e.g. invalid provider+model combination)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { description: Unauthorized }
+
+  /api/profiles/update:
+    post:
+      summary: Update a profile's configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                model: { type: string }
+                provider: { type: string }
+                description: { type: string }
+                systemPrompt: { type: string }
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile: { $ref: '#/components/schemas/ProfileSummary' }
+        '400':
+          description: Validation error (invalid provider+model combination returns 400)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { description: Unauthorized }
+        '404': { description: Profile not found }

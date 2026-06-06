@@ -19,6 +19,8 @@ export type SwarmKanbanCard = {
   createdBy: string
   createdAt: number
   updatedAt: number
+  archivedAt?: number | null
+  deletedAt?: number | null
   parents?: string[]
   children?: string[]
   latestRun?: {
@@ -184,6 +186,57 @@ export function updateSwarmKanbanCard(cardId: string, updates: UpdateSwarmKanban
     title: typeof updates.title === 'string' ? updates.title : current.title,
     updatedAt: Date.now(),
   })
+  file.cards[index] = next
+  writeKanbanFile(file)
+  return next
+}
+
+export function getSwarmKanbanCard(cardId: string): SwarmKanbanCard | null {
+  const file = readKanbanFile()
+  const card = file.cards.find((c) => c.id === cardId)
+  return card ? normalizeCard(card) : null
+}
+
+export function isArchivedCard(card: SwarmKanbanCard): boolean {
+  return typeof card.archivedAt === 'number' && card.archivedAt > 0
+}
+
+export function isDeletedCard(card: SwarmKanbanCard): boolean {
+  return typeof card.deletedAt === 'number' && card.deletedAt > 0
+}
+
+export function archiveSwarmKanbanCard(cardId: string): SwarmKanbanCard | null {
+  const file = readKanbanFile()
+  const index = file.cards.findIndex((c) => c.id === cardId)
+  if (index === -1) return null
+  const card = normalizeCard(file.cards[index])
+  if (isDeletedCard(card)) return null
+  if (isArchivedCard(card)) return card
+  const next = { ...card, archivedAt: Date.now(), updatedAt: Date.now() }
+  file.cards[index] = next
+  writeKanbanFile(file)
+  return next
+}
+
+export function unarchiveSwarmKanbanCard(cardId: string): SwarmKanbanCard | null {
+  const file = readKanbanFile()
+  const index = file.cards.findIndex((c) => c.id === cardId)
+  if (index === -1) return null
+  const card = normalizeCard(file.cards[index])
+  if (!isArchivedCard(card)) return card
+  const next = { ...card, archivedAt: null, updatedAt: Date.now() }
+  file.cards[index] = next
+  writeKanbanFile(file)
+  return next
+}
+
+export function deleteSwarmKanbanCard(cardId: string): SwarmKanbanCard | null {
+  const file = readKanbanFile()
+  const index = file.cards.findIndex((c) => c.id === cardId)
+  if (index === -1) return null
+  const card = normalizeCard(file.cards[index])
+  if (isDeletedCard(card)) return card
+  const next = { ...card, deletedAt: Date.now(), updatedAt: Date.now() }
   file.cards[index] = next
   writeKanbanFile(file)
   return next

@@ -694,3 +694,18 @@ export async function updateKanbanCard(
 ): Promise<SwarmKanbanCard | null> {
   return Promise.resolve(resolveKanbanBackend().update(cardId, updates))
 }
+
+export async function archiveKanbanCard(input: {
+  cardId: string
+  actor?: string
+  reason?: string
+}): Promise<SwarmKanbanCard | null> {
+  return Promise.resolve(resolveKanbanBackend().update(input.cardId, { archivedAt: Date.now() } as UpdateSwarmKanbanCardInput))
+}
+
+export async function unarchiveKanbanCard(input: {
+  cardId: string
+  actor?: string
+}): Promise<SwarmKanbanCard | null> {
+  return Promise.resolve(resolveKanbanBackend().update(input.cardId, { archivedAt: null } as UpdateSwarmKanbanCardInput))
+}

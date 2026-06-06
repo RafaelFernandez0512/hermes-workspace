@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { AgentProgress } from '@/components/agent-view/agent-progress'
 import { PixelAvatar } from '@/components/agent-swarm/pixel-avatar'
 import { cn } from '@/lib/utils'
+import type { CanonicalSwarmStatus } from '@/lib/swarm/canonical-state'
+import { incidentCtaFor } from '@/lib/swarm/cta-copy'
 
 type ReportState = 'all' | 'needs_review' | 'ready' | 'blocked' | 'stale' | 'in_progress' | 'artifact'
 type ReportLayout = 'board' | 'cards' | 'list'
@@ -508,6 +510,7 @@ function buildReplyPrefill(row: Swarm2InboxItem): string {
 export function Swarm2ReportsView({
   missions,
   runtimes,
+  status,
   onSelectWorker,
   onOpenItem,
   onRouteToReviewer,
@@ -515,6 +518,7 @@ export function Swarm2ReportsView({
 }: {
   missions: Array<MissionSummary>
   runtimes: Array<RuntimeReportEntry>
+  status?: CanonicalSwarmStatus
   onSelectWorker?: (workerId: string) => void
   onOpenItem?: (row: Swarm2InboxItem) => void
   onRouteToReviewer?: (row: Swarm2InboxItem) => void
@@ -856,7 +860,7 @@ export function Swarm2ReportsView({
                       onClick={() => setExpandedId(expanded ? null : `worker:${card.workerId}`)}
                       className="rounded-lg border border-[var(--theme-border)] bg-[var(--theme-card)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--theme-text)] hover:border-[var(--theme-accent)]"
                     >
-                      {expanded ? 'Hide reports' : `Open reports (${card.rows.length})`}
+                      {expanded ? 'Hide reports' : `${status ? incidentCtaFor(status) : 'Open reports'} (${card.rows.length})`}
                     </button>
                     {card.prUrl ? (
                       <a

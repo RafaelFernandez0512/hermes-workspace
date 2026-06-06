@@ -12,6 +12,7 @@ import { appendSwarmMemoryEvent, buildSwarmStartupSnapshot } from '../../server/
 import { rosterByWorkerId, type SwarmRosterWorker } from '../../server/swarm-roster'
 import { publishSwarmCheckpointNotification } from '../../server/swarm-notifications'
 import { ensureSwarmProfileConfig } from '../../server/swarm-profile-config'
+import { bumpHeartbeat } from '../../server/swarm-foundation'
 
 const HERMES_BIN_CANDIDATES = [
   process.env.HERMES_CLI_BIN,
@@ -247,6 +248,7 @@ function writeRuntimePatch(workerId: string, patch: Record<string, unknown>): vo
     ...patch,
   }
   writeFileSync(runtimePath, JSON.stringify(next, null, 2) + '\n')
+  bumpHeartbeat(workerId)
 }
 
 function cleanRuntimeText(value: unknown): string | null {

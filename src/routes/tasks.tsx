@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Outlet, createFileRoute, useRouterState } from '@tanstack/react-router'
 import { z } from 'zod'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { TasksScreen } from '@/screens/tasks/tasks-screen'
@@ -15,5 +15,13 @@ export const Route = createFileRoute('/tasks')({
 
 function TasksRoute() {
   usePageTitle('Tasks')
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+
+  if (pathname !== '/tasks') {
+    return <Outlet />
+  }
+
   return <TasksScreen />
 }

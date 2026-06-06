@@ -427,6 +427,84 @@ export async function renewWorker(workerId: string): Promise<{ ok: boolean; rest
   return { ok: started.ok && sent.ok, restarted: started.ok, resumeSent: sent.ok, error: sent.error, handoffPath: hp }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Incident Console lifecycle actions
+// ═══════════════════════════════════════════════════════════════
+
+// In-memory pause store keyed by workerId / swarmId
+const pauseStore = new Map<string, number>()
+
+export async function startOrResumeSwarm(swarmId?: string): Promise<{ swarmId: string; status: string }> {
+  const ids = _listWorkerIds()
+  const id = swarmId ?? ids[0] ?? 'default'
+  pauseStore.delete(id)
+  if (ids.includes(id)) {
+    await sendToWorker(id, 'RESUME: Continue from where you left off. Read your latest handoff and runtime.json then proceed.')
+  }
+  return { swarmId: id, status: 'running' }
+}
+
+export async function pauseSwarm(swarmId: string): Promise<void> {
+  pauseStore.set(swarmId, Date.now())
+}
+
+export async function resumeSwarm(swarmId: string): Promise<void> {
+  pauseStore.delete(swarmId)
+  await startOrResumeSwarm(swarmId)
+}
+
+export async function markBlocked(workerId: string, reason: string): Promise<void> {
+  _patchRuntime(workerId, { state: 'blocked', blockedReason: reason || 'Manually marked blocked', checkpointStatus: 'blocked' })
+}
+
+export async function markNeedsReview(workerId: string): Promise<void> {
+  _patchRuntime(workerId, { checkpointStatus: 'needs_input', needsHuman: true })
+}
+
+export async function markReady(workerId: string): Promise<void> {
+  _patchRuntime(workerId, { checkpointStatus: 'done', needsHuman: false })
+}
+
+export async function completeSwarm(swarmId: string): Promise<void> {
+  for (const wId of _listWorkerIds()) {
+    _patchRuntime(wId, { state: 'idle', checkpointStatus: 'done' })
+  }
+}
+
+export async function recoverRuntime(swarmId: string): Promise<void> {
+  for (const wId of _listWorkerIds()) {
+    _patchRuntime(wId, { state: 'idle', checkpointStatus: 'none', needsHuman: false })
+  }
+  await startOrResumeSwarm(swarmId)
+}
+
+function _patchRuntime(workerId: string, patch: Record<string, unknown>): void {
+  try {
+    const profilePath = join(getProfilesDir(), workerId)
+    const runtimePath = join(profilePath, 'runtime.json')
+    if (!existsSync(runtimePath)) return
+    const existing = JSON.parse(readFileSync(runtimePath, 'utf8')) as Record<string, unknown>
+    const merged = { ...existing, ...patch, workerId }
+    const tmpPath = `${runtimePath}.tmp-${process.pid}-${Date.now()}`
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('node:fs') as { writeFileSync: (p: string, d: string, e: string) => void; renameSync: (o: string, n: string) => void }
+    fs.writeFileSync(tmpPath, JSON.stringify(merged, null, 2) + '\n', 'utf8')
+    fs.renameSync(tmpPath, runtimePath)
+  } catch {
+    // best-effort
+  }
+}
+
+function _listWorkerIds(): string[] {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('./swarm-foundation') as { listSwarmWorkerIds?: () => string[] }
+    return mod.listSwarmWorkerIds?.() ?? []
+  } catch {
+    return []
+  }
+}
+
 export async function autoSweepLifecycle(workerIds: Array<string>): Promise<Array<{ workerId: string; action: 'none' | 'request-handoff' | 'renew'; status: SwarmLifecycleStatus; result?: { ok: boolean; error?: string } }>> {
   const out: Array<{ workerId: string; action: 'none' | 'request-handoff' | 'renew'; status: SwarmLifecycleStatus; result?: { ok: boolean; error?: string } }> = []
   for (const workerId of workerIds) {

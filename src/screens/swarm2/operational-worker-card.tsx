@@ -8,6 +8,7 @@ import {
   ArrowRight01Icon,
   CheckListIcon,
   ComputerTerminal01Icon,
+  EyeIcon,
   Settings01Icon,
 } from '@hugeicons/core-free-icons'
 import { AgentProgress } from '@/components/agent-view/agent-progress'
@@ -19,6 +20,7 @@ import { Swarm2TaskQueue } from './swarm2-task-queue'
 import type { CrewMember } from '@/hooks/use-crew-status'
 import { getOnlineStatus } from '@/hooks/use-crew-status'
 import { cn } from '@/lib/utils'
+import type { CanonicalSwarmStatus } from '@/lib/swarm/canonical-state'
 
 type WorkerState =
   | 'active'
@@ -106,6 +108,33 @@ function deriveWorkerState(
   if (lc.includes('wait') || lc.includes('approval')) return 'waiting'
   if (lc.includes('block') || lc.includes('error') || lc.includes('fail')) return 'error'
   return 'active'
+}
+
+/**
+ * Map a CanonicalSwarmStatus to a Tailwind color class for badge dots.
+ */
+export function canonicalStatusColor(status: CanonicalSwarmStatus): string {
+  switch (status) {
+    case 'running':
+    case 'starting':
+      return 'text-emerald-500'
+    case 'blocked':
+    case 'failed':
+      return 'text-red-500'
+    case 'needs_review':
+    case 'recovering':
+      return 'text-amber-500'
+    case 'stale':
+      return 'text-orange-500'
+    case 'completed':
+    case 'ready':
+      return 'text-blue-500'
+    case 'paused':
+      return 'text-primary-400'
+    case 'not_started':
+    default:
+      return 'text-primary-600'
+  }
 }
 
 function statusStyles(state: WorkerState) {
@@ -485,15 +514,6 @@ export function OperationalWorkerCard({
         onClick={(event) => event.stopPropagation()}
       >
           <div className="mb-2 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--theme-muted)]">
-            <button
-              type="button"
-              aria-label="Previous panel"
-              title="Previous panel"
-              onClick={() => cycleFocusPanel(-1)}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[var(--theme-border)] bg-[var(--theme-bg)] text-[var(--theme-muted)] transition-colors hover:text-[var(--theme-text)]"
-            >
-              <HugeiconsIcon icon={ArrowLeft01Icon} size={11} />
-            </button>
             <div className="min-w-0 flex-1 text-center">
               <div className="truncate">{activeFocusPanel?.label ?? 'Panel'}</div>
               <div className="truncate text-[10px] font-medium normal-case tracking-normal text-[var(--theme-muted)]/80">
@@ -514,12 +534,12 @@ export function OperationalWorkerCard({
               ) : null}
               <button
                 type="button"
-                aria-label="Next panel"
-                title="Next panel"
-                onClick={() => cycleFocusPanel(1)}
+                aria-label="View worker"
+                title="View worker"
+                onClick={onOpenTui}
                 className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[var(--theme-border)] bg-[var(--theme-bg)] text-[var(--theme-muted)] transition-colors hover:text-[var(--theme-text)]"
               >
-                <HugeiconsIcon icon={ArrowRight01Icon} size={11} />
+                <HugeiconsIcon icon={EyeIcon} size={11} />
               </button>
             </div>
           </div>

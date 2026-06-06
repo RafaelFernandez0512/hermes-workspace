@@ -31,10 +31,12 @@ import { Route as EarlyAccessRouteImport } from './routes/early-access'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ConductorRouteImport } from './routes/conductor'
 import { Route as AgoraRouteImport } from './routes/agora'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as SplatRouteImport } from './routes/$'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as ChatIndexRouteImport } from './routes/chat/index'
+import { Route as TasksTaskIdRouteImport } from './routes/tasks/$taskId'
 import { Route as SettingsProvidersRouteImport } from './routes/settings/providers'
 import { Route as ReserveConfirmRouteImport } from './routes/reserve/confirm'
 import { Route as ChatSessionKeyRouteImport } from './routes/chat/$sessionKey'
@@ -119,6 +121,7 @@ import { Route as ApiUpdateStatusRouteImport } from './routes/api/update/status'
 import { Route as ApiUpdateAgentRouteImport } from './routes/api/update/agent'
 import { Route as ApiSwarmRuntimeResetRouteImport } from './routes/api/swarm-runtime.reset'
 import { Route as ApiSwarmMemorySearchRouteImport } from './routes/api/swarm-memory/search'
+import { Route as ApiSwarmLifecycleStatusRouteImport } from './routes/api/swarm-lifecycle.status'
 import { Route as ApiSkillsUninstallRouteImport } from './routes/api/skills/uninstall'
 import { Route as ApiSkillsToggleRouteImport } from './routes/api/skills/toggle'
 import { Route as ApiSkillsInstallRouteImport } from './routes/api/skills/install'
@@ -164,6 +167,12 @@ import { Route as ApiClaudeTasksTaskIdRouteImport } from './routes/api/claude-ta
 import { Route as ApiClaudeProxySplatRouteImport } from './routes/api/claude-proxy/$'
 import { Route as ApiClaudeJobsJobIdRouteImport } from './routes/api/claude-jobs.$jobId'
 import { Route as ApiArtifactsArtifactIdRouteImport } from './routes/api/artifacts.$artifactId'
+import { Route as ApiAdminCleanupRouteImport } from './routes/api/admin/cleanup'
+import { Route as ApiSwarmMissionsMissionIdUnarchiveRouteImport } from './routes/api/swarm-missions.$missionId.unarchive'
+import { Route as ApiSwarmMissionsMissionIdDeleteRouteImport } from './routes/api/swarm-missions.$missionId.delete'
+import { Route as ApiSwarmMissionsMissionIdArchiveRouteImport } from './routes/api/swarm-missions.$missionId.archive'
+import { Route as ApiSwarmKanbanCardIdUnarchiveRouteImport } from './routes/api/swarm-kanban.$cardId.unarchive'
+import { Route as ApiSwarmKanbanCardIdArchiveRouteImport } from './routes/api/swarm-kanban.$cardId.archive'
 import { Route as ApiSessionsSessionKeyStatusRouteImport } from './routes/api/sessions/$sessionKey.status'
 import { Route as ApiSessionsSessionKeyActiveRunRouteImport } from './routes/api/sessions/$sessionKey.active-run'
 import { Route as ApiMcpHubSourcesIdRouteImport } from './routes/api/mcp/hub-sources.$id'
@@ -281,6 +290,11 @@ const AgoraRoute = AgoraRouteImport.update({
   path: '/agora',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SplatRoute = SplatRouteImport.update({
   id: '/$',
   path: '/$',
@@ -300,6 +314,11 @@ const ChatIndexRoute = ChatIndexRouteImport.update({
   id: '/chat/',
   path: '/chat/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const TasksTaskIdRoute = TasksTaskIdRouteImport.update({
+  id: '/$taskId',
+  path: '/$taskId',
+  getParentRoute: () => TasksRoute,
 } as any)
 const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
   id: '/providers',
@@ -723,6 +742,11 @@ const ApiSwarmMemorySearchRoute = ApiSwarmMemorySearchRouteImport.update({
   path: '/search',
   getParentRoute: () => ApiSwarmMemoryRoute,
 } as any)
+const ApiSwarmLifecycleStatusRoute = ApiSwarmLifecycleStatusRouteImport.update({
+  id: '/status',
+  path: '/status',
+  getParentRoute: () => ApiSwarmLifecycleRoute,
+} as any)
 const ApiSkillsUninstallRoute = ApiSkillsUninstallRouteImport.update({
   id: '/uninstall',
   path: '/uninstall',
@@ -951,6 +975,41 @@ const ApiArtifactsArtifactIdRoute = ApiArtifactsArtifactIdRouteImport.update({
   path: '/$artifactId',
   getParentRoute: () => ApiArtifactsRoute,
 } as any)
+const ApiAdminCleanupRoute = ApiAdminCleanupRouteImport.update({
+  id: '/api/admin/cleanup',
+  path: '/api/admin/cleanup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSwarmMissionsMissionIdUnarchiveRoute =
+  ApiSwarmMissionsMissionIdUnarchiveRouteImport.update({
+    id: '/$missionId/unarchive',
+    path: '/$missionId/unarchive',
+    getParentRoute: () => ApiSwarmMissionsRoute,
+  } as any)
+const ApiSwarmMissionsMissionIdDeleteRoute =
+  ApiSwarmMissionsMissionIdDeleteRouteImport.update({
+    id: '/$missionId/delete',
+    path: '/$missionId/delete',
+    getParentRoute: () => ApiSwarmMissionsRoute,
+  } as any)
+const ApiSwarmMissionsMissionIdArchiveRoute =
+  ApiSwarmMissionsMissionIdArchiveRouteImport.update({
+    id: '/$missionId/archive',
+    path: '/$missionId/archive',
+    getParentRoute: () => ApiSwarmMissionsRoute,
+  } as any)
+const ApiSwarmKanbanCardIdUnarchiveRoute =
+  ApiSwarmKanbanCardIdUnarchiveRouteImport.update({
+    id: '/$cardId/unarchive',
+    path: '/$cardId/unarchive',
+    getParentRoute: () => ApiSwarmKanbanRoute,
+  } as any)
+const ApiSwarmKanbanCardIdArchiveRoute =
+  ApiSwarmKanbanCardIdArchiveRouteImport.update({
+    id: '/$cardId/archive',
+    path: '/$cardId/archive',
+    getParentRoute: () => ApiSwarmKanbanRoute,
+  } as any)
 const ApiSessionsSessionKeyStatusRoute =
   ApiSessionsSessionKeyStatusRouteImport.update({
     id: '/$sessionKey/status',
@@ -989,6 +1048,7 @@ const ApiRunsSessionKeyRunIdAbandonRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
+  '/admin': typeof AdminRoute
   '/agora': typeof AgoraRoute
   '/conductor': typeof ConductorRoute
   '/dashboard': typeof DashboardRoute
@@ -1007,7 +1067,7 @@ export interface FileRoutesByFullPath {
   '/skills': typeof SkillsRoute
   '/swarm': typeof SwarmRoute
   '/swarm2': typeof Swarm2Route
-  '/tasks': typeof TasksRoute
+  '/tasks': typeof TasksRouteWithChildren
   '/terminal': typeof TerminalRoute
   '/vt-capital': typeof VtCapitalRoute
   '/world': typeof WorldRoute
@@ -1066,11 +1126,11 @@ export interface FileRoutesByFullPath {
   '/api/swarm-dispatch': typeof ApiSwarmDispatchRoute
   '/api/swarm-environment': typeof ApiSwarmEnvironmentRoute
   '/api/swarm-health': typeof ApiSwarmHealthRoute
-  '/api/swarm-kanban': typeof ApiSwarmKanbanRoute
-  '/api/swarm-lifecycle': typeof ApiSwarmLifecycleRoute
+  '/api/swarm-kanban': typeof ApiSwarmKanbanRouteWithChildren
+  '/api/swarm-lifecycle': typeof ApiSwarmLifecycleRouteWithChildren
   '/api/swarm-memory': typeof ApiSwarmMemoryRouteWithChildren
   '/api/swarm-mission-events': typeof ApiSwarmMissionEventsRoute
-  '/api/swarm-missions': typeof ApiSwarmMissionsRoute
+  '/api/swarm-missions': typeof ApiSwarmMissionsRouteWithChildren
   '/api/swarm-orchestrator-loop': typeof ApiSwarmOrchestratorLoopRoute
   '/api/swarm-project': typeof ApiSwarmProjectRoute
   '/api/swarm-reports': typeof ApiSwarmReportsRoute
@@ -1090,8 +1150,10 @@ export interface FileRoutesByFullPath {
   '/chat/$sessionKey': typeof ChatSessionKeyRoute
   '/reserve/confirm': typeof ReserveConfirmRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/tasks/$taskId': typeof TasksTaskIdRoute
   '/chat/': typeof ChatIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/api/admin/cleanup': typeof ApiAdminCleanupRoute
   '/api/artifacts/$artifactId': typeof ApiArtifactsArtifactIdRoute
   '/api/claude-jobs/$jobId': typeof ApiClaudeJobsJobIdRoute
   '/api/claude-proxy/$': typeof ApiClaudeProxySplatRoute
@@ -1137,6 +1199,7 @@ export interface FileRoutesByFullPath {
   '/api/skills/install': typeof ApiSkillsInstallRoute
   '/api/skills/toggle': typeof ApiSkillsToggleRoute
   '/api/skills/uninstall': typeof ApiSkillsUninstallRoute
+  '/api/swarm-lifecycle/status': typeof ApiSwarmLifecycleStatusRoute
   '/api/swarm-memory/search': typeof ApiSwarmMemorySearchRoute
   '/api/swarm-runtime/reset': typeof ApiSwarmRuntimeResetRoute
   '/api/update/agent': typeof ApiUpdateAgentRoute
@@ -1147,11 +1210,17 @@ export interface FileRoutesByFullPath {
   '/api/mcp/hub-sources/$id': typeof ApiMcpHubSourcesIdRoute
   '/api/sessions/$sessionKey/active-run': typeof ApiSessionsSessionKeyActiveRunRoute
   '/api/sessions/$sessionKey/status': typeof ApiSessionsSessionKeyStatusRoute
+  '/api/swarm-kanban/$cardId/archive': typeof ApiSwarmKanbanCardIdArchiveRoute
+  '/api/swarm-kanban/$cardId/unarchive': typeof ApiSwarmKanbanCardIdUnarchiveRoute
+  '/api/swarm-missions/$missionId/archive': typeof ApiSwarmMissionsMissionIdArchiveRoute
+  '/api/swarm-missions/$missionId/delete': typeof ApiSwarmMissionsMissionIdDeleteRoute
+  '/api/swarm-missions/$missionId/unarchive': typeof ApiSwarmMissionsMissionIdUnarchiveRoute
   '/api/runs/$sessionKey/$runId/abandon': typeof ApiRunsSessionKeyRunIdAbandonRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
+  '/admin': typeof AdminRoute
   '/agora': typeof AgoraRoute
   '/conductor': typeof ConductorRoute
   '/dashboard': typeof DashboardRoute
@@ -1169,7 +1238,7 @@ export interface FileRoutesByTo {
   '/skills': typeof SkillsRoute
   '/swarm': typeof SwarmRoute
   '/swarm2': typeof Swarm2Route
-  '/tasks': typeof TasksRoute
+  '/tasks': typeof TasksRouteWithChildren
   '/terminal': typeof TerminalRoute
   '/vt-capital': typeof VtCapitalRoute
   '/world': typeof WorldRoute
@@ -1228,11 +1297,11 @@ export interface FileRoutesByTo {
   '/api/swarm-dispatch': typeof ApiSwarmDispatchRoute
   '/api/swarm-environment': typeof ApiSwarmEnvironmentRoute
   '/api/swarm-health': typeof ApiSwarmHealthRoute
-  '/api/swarm-kanban': typeof ApiSwarmKanbanRoute
-  '/api/swarm-lifecycle': typeof ApiSwarmLifecycleRoute
+  '/api/swarm-kanban': typeof ApiSwarmKanbanRouteWithChildren
+  '/api/swarm-lifecycle': typeof ApiSwarmLifecycleRouteWithChildren
   '/api/swarm-memory': typeof ApiSwarmMemoryRouteWithChildren
   '/api/swarm-mission-events': typeof ApiSwarmMissionEventsRoute
-  '/api/swarm-missions': typeof ApiSwarmMissionsRoute
+  '/api/swarm-missions': typeof ApiSwarmMissionsRouteWithChildren
   '/api/swarm-orchestrator-loop': typeof ApiSwarmOrchestratorLoopRoute
   '/api/swarm-project': typeof ApiSwarmProjectRoute
   '/api/swarm-reports': typeof ApiSwarmReportsRoute
@@ -1252,8 +1321,10 @@ export interface FileRoutesByTo {
   '/chat/$sessionKey': typeof ChatSessionKeyRoute
   '/reserve/confirm': typeof ReserveConfirmRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/tasks/$taskId': typeof TasksTaskIdRoute
   '/chat': typeof ChatIndexRoute
   '/settings': typeof SettingsIndexRoute
+  '/api/admin/cleanup': typeof ApiAdminCleanupRoute
   '/api/artifacts/$artifactId': typeof ApiArtifactsArtifactIdRoute
   '/api/claude-jobs/$jobId': typeof ApiClaudeJobsJobIdRoute
   '/api/claude-proxy/$': typeof ApiClaudeProxySplatRoute
@@ -1299,6 +1370,7 @@ export interface FileRoutesByTo {
   '/api/skills/install': typeof ApiSkillsInstallRoute
   '/api/skills/toggle': typeof ApiSkillsToggleRoute
   '/api/skills/uninstall': typeof ApiSkillsUninstallRoute
+  '/api/swarm-lifecycle/status': typeof ApiSwarmLifecycleStatusRoute
   '/api/swarm-memory/search': typeof ApiSwarmMemorySearchRoute
   '/api/swarm-runtime/reset': typeof ApiSwarmRuntimeResetRoute
   '/api/update/agent': typeof ApiUpdateAgentRoute
@@ -1309,12 +1381,18 @@ export interface FileRoutesByTo {
   '/api/mcp/hub-sources/$id': typeof ApiMcpHubSourcesIdRoute
   '/api/sessions/$sessionKey/active-run': typeof ApiSessionsSessionKeyActiveRunRoute
   '/api/sessions/$sessionKey/status': typeof ApiSessionsSessionKeyStatusRoute
+  '/api/swarm-kanban/$cardId/archive': typeof ApiSwarmKanbanCardIdArchiveRoute
+  '/api/swarm-kanban/$cardId/unarchive': typeof ApiSwarmKanbanCardIdUnarchiveRoute
+  '/api/swarm-missions/$missionId/archive': typeof ApiSwarmMissionsMissionIdArchiveRoute
+  '/api/swarm-missions/$missionId/delete': typeof ApiSwarmMissionsMissionIdDeleteRoute
+  '/api/swarm-missions/$missionId/unarchive': typeof ApiSwarmMissionsMissionIdUnarchiveRoute
   '/api/runs/$sessionKey/$runId/abandon': typeof ApiRunsSessionKeyRunIdAbandonRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
+  '/admin': typeof AdminRoute
   '/agora': typeof AgoraRoute
   '/conductor': typeof ConductorRoute
   '/dashboard': typeof DashboardRoute
@@ -1333,7 +1411,7 @@ export interface FileRoutesById {
   '/skills': typeof SkillsRoute
   '/swarm': typeof SwarmRoute
   '/swarm2': typeof Swarm2Route
-  '/tasks': typeof TasksRoute
+  '/tasks': typeof TasksRouteWithChildren
   '/terminal': typeof TerminalRoute
   '/vt-capital': typeof VtCapitalRoute
   '/world': typeof WorldRoute
@@ -1392,11 +1470,11 @@ export interface FileRoutesById {
   '/api/swarm-dispatch': typeof ApiSwarmDispatchRoute
   '/api/swarm-environment': typeof ApiSwarmEnvironmentRoute
   '/api/swarm-health': typeof ApiSwarmHealthRoute
-  '/api/swarm-kanban': typeof ApiSwarmKanbanRoute
-  '/api/swarm-lifecycle': typeof ApiSwarmLifecycleRoute
+  '/api/swarm-kanban': typeof ApiSwarmKanbanRouteWithChildren
+  '/api/swarm-lifecycle': typeof ApiSwarmLifecycleRouteWithChildren
   '/api/swarm-memory': typeof ApiSwarmMemoryRouteWithChildren
   '/api/swarm-mission-events': typeof ApiSwarmMissionEventsRoute
-  '/api/swarm-missions': typeof ApiSwarmMissionsRoute
+  '/api/swarm-missions': typeof ApiSwarmMissionsRouteWithChildren
   '/api/swarm-orchestrator-loop': typeof ApiSwarmOrchestratorLoopRoute
   '/api/swarm-project': typeof ApiSwarmProjectRoute
   '/api/swarm-reports': typeof ApiSwarmReportsRoute
@@ -1416,8 +1494,10 @@ export interface FileRoutesById {
   '/chat/$sessionKey': typeof ChatSessionKeyRoute
   '/reserve/confirm': typeof ReserveConfirmRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/tasks/$taskId': typeof TasksTaskIdRoute
   '/chat/': typeof ChatIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/api/admin/cleanup': typeof ApiAdminCleanupRoute
   '/api/artifacts/$artifactId': typeof ApiArtifactsArtifactIdRoute
   '/api/claude-jobs/$jobId': typeof ApiClaudeJobsJobIdRoute
   '/api/claude-proxy/$': typeof ApiClaudeProxySplatRoute
@@ -1463,6 +1543,7 @@ export interface FileRoutesById {
   '/api/skills/install': typeof ApiSkillsInstallRoute
   '/api/skills/toggle': typeof ApiSkillsToggleRoute
   '/api/skills/uninstall': typeof ApiSkillsUninstallRoute
+  '/api/swarm-lifecycle/status': typeof ApiSwarmLifecycleStatusRoute
   '/api/swarm-memory/search': typeof ApiSwarmMemorySearchRoute
   '/api/swarm-runtime/reset': typeof ApiSwarmRuntimeResetRoute
   '/api/update/agent': typeof ApiUpdateAgentRoute
@@ -1473,6 +1554,11 @@ export interface FileRoutesById {
   '/api/mcp/hub-sources/$id': typeof ApiMcpHubSourcesIdRoute
   '/api/sessions/$sessionKey/active-run': typeof ApiSessionsSessionKeyActiveRunRoute
   '/api/sessions/$sessionKey/status': typeof ApiSessionsSessionKeyStatusRoute
+  '/api/swarm-kanban/$cardId/archive': typeof ApiSwarmKanbanCardIdArchiveRoute
+  '/api/swarm-kanban/$cardId/unarchive': typeof ApiSwarmKanbanCardIdUnarchiveRoute
+  '/api/swarm-missions/$missionId/archive': typeof ApiSwarmMissionsMissionIdArchiveRoute
+  '/api/swarm-missions/$missionId/delete': typeof ApiSwarmMissionsMissionIdDeleteRoute
+  '/api/swarm-missions/$missionId/unarchive': typeof ApiSwarmMissionsMissionIdUnarchiveRoute
   '/api/runs/$sessionKey/$runId/abandon': typeof ApiRunsSessionKeyRunIdAbandonRoute
 }
 export interface FileRouteTypes {
@@ -1480,6 +1566,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/$'
+    | '/admin'
     | '/agora'
     | '/conductor'
     | '/dashboard'
@@ -1581,8 +1668,10 @@ export interface FileRouteTypes {
     | '/chat/$sessionKey'
     | '/reserve/confirm'
     | '/settings/providers'
+    | '/tasks/$taskId'
     | '/chat/'
     | '/settings/'
+    | '/api/admin/cleanup'
     | '/api/artifacts/$artifactId'
     | '/api/claude-jobs/$jobId'
     | '/api/claude-proxy/$'
@@ -1628,6 +1717,7 @@ export interface FileRouteTypes {
     | '/api/skills/install'
     | '/api/skills/toggle'
     | '/api/skills/uninstall'
+    | '/api/swarm-lifecycle/status'
     | '/api/swarm-memory/search'
     | '/api/swarm-runtime/reset'
     | '/api/update/agent'
@@ -1638,11 +1728,17 @@ export interface FileRouteTypes {
     | '/api/mcp/hub-sources/$id'
     | '/api/sessions/$sessionKey/active-run'
     | '/api/sessions/$sessionKey/status'
+    | '/api/swarm-kanban/$cardId/archive'
+    | '/api/swarm-kanban/$cardId/unarchive'
+    | '/api/swarm-missions/$missionId/archive'
+    | '/api/swarm-missions/$missionId/delete'
+    | '/api/swarm-missions/$missionId/unarchive'
     | '/api/runs/$sessionKey/$runId/abandon'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/$'
+    | '/admin'
     | '/agora'
     | '/conductor'
     | '/dashboard'
@@ -1743,8 +1839,10 @@ export interface FileRouteTypes {
     | '/chat/$sessionKey'
     | '/reserve/confirm'
     | '/settings/providers'
+    | '/tasks/$taskId'
     | '/chat'
     | '/settings'
+    | '/api/admin/cleanup'
     | '/api/artifacts/$artifactId'
     | '/api/claude-jobs/$jobId'
     | '/api/claude-proxy/$'
@@ -1790,6 +1888,7 @@ export interface FileRouteTypes {
     | '/api/skills/install'
     | '/api/skills/toggle'
     | '/api/skills/uninstall'
+    | '/api/swarm-lifecycle/status'
     | '/api/swarm-memory/search'
     | '/api/swarm-runtime/reset'
     | '/api/update/agent'
@@ -1800,11 +1899,17 @@ export interface FileRouteTypes {
     | '/api/mcp/hub-sources/$id'
     | '/api/sessions/$sessionKey/active-run'
     | '/api/sessions/$sessionKey/status'
+    | '/api/swarm-kanban/$cardId/archive'
+    | '/api/swarm-kanban/$cardId/unarchive'
+    | '/api/swarm-missions/$missionId/archive'
+    | '/api/swarm-missions/$missionId/delete'
+    | '/api/swarm-missions/$missionId/unarchive'
     | '/api/runs/$sessionKey/$runId/abandon'
   id:
     | '__root__'
     | '/'
     | '/$'
+    | '/admin'
     | '/agora'
     | '/conductor'
     | '/dashboard'
@@ -1906,8 +2011,10 @@ export interface FileRouteTypes {
     | '/chat/$sessionKey'
     | '/reserve/confirm'
     | '/settings/providers'
+    | '/tasks/$taskId'
     | '/chat/'
     | '/settings/'
+    | '/api/admin/cleanup'
     | '/api/artifacts/$artifactId'
     | '/api/claude-jobs/$jobId'
     | '/api/claude-proxy/$'
@@ -1953,6 +2060,7 @@ export interface FileRouteTypes {
     | '/api/skills/install'
     | '/api/skills/toggle'
     | '/api/skills/uninstall'
+    | '/api/swarm-lifecycle/status'
     | '/api/swarm-memory/search'
     | '/api/swarm-runtime/reset'
     | '/api/update/agent'
@@ -1963,12 +2071,18 @@ export interface FileRouteTypes {
     | '/api/mcp/hub-sources/$id'
     | '/api/sessions/$sessionKey/active-run'
     | '/api/sessions/$sessionKey/status'
+    | '/api/swarm-kanban/$cardId/archive'
+    | '/api/swarm-kanban/$cardId/unarchive'
+    | '/api/swarm-missions/$missionId/archive'
+    | '/api/swarm-missions/$missionId/delete'
+    | '/api/swarm-missions/$missionId/unarchive'
     | '/api/runs/$sessionKey/$runId/abandon'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SplatRoute: typeof SplatRoute
+  AdminRoute: typeof AdminRoute
   AgoraRoute: typeof AgoraRoute
   ConductorRoute: typeof ConductorRoute
   DashboardRoute: typeof DashboardRoute
@@ -1987,7 +2101,7 @@ export interface RootRouteChildren {
   SkillsRoute: typeof SkillsRoute
   SwarmRoute: typeof SwarmRoute
   Swarm2Route: typeof Swarm2Route
-  TasksRoute: typeof TasksRoute
+  TasksRoute: typeof TasksRouteWithChildren
   TerminalRoute: typeof TerminalRoute
   VtCapitalRoute: typeof VtCapitalRoute
   WorldRoute: typeof WorldRoute
@@ -2046,11 +2160,11 @@ export interface RootRouteChildren {
   ApiSwarmDispatchRoute: typeof ApiSwarmDispatchRoute
   ApiSwarmEnvironmentRoute: typeof ApiSwarmEnvironmentRoute
   ApiSwarmHealthRoute: typeof ApiSwarmHealthRoute
-  ApiSwarmKanbanRoute: typeof ApiSwarmKanbanRoute
-  ApiSwarmLifecycleRoute: typeof ApiSwarmLifecycleRoute
+  ApiSwarmKanbanRoute: typeof ApiSwarmKanbanRouteWithChildren
+  ApiSwarmLifecycleRoute: typeof ApiSwarmLifecycleRouteWithChildren
   ApiSwarmMemoryRoute: typeof ApiSwarmMemoryRouteWithChildren
   ApiSwarmMissionEventsRoute: typeof ApiSwarmMissionEventsRoute
-  ApiSwarmMissionsRoute: typeof ApiSwarmMissionsRoute
+  ApiSwarmMissionsRoute: typeof ApiSwarmMissionsRouteWithChildren
   ApiSwarmOrchestratorLoopRoute: typeof ApiSwarmOrchestratorLoopRoute
   ApiSwarmProjectRoute: typeof ApiSwarmProjectRoute
   ApiSwarmReportsRoute: typeof ApiSwarmReportsRoute
@@ -2069,6 +2183,7 @@ export interface RootRouteChildren {
   ApiWorkspaceRoute: typeof ApiWorkspaceRoute
   ChatSessionKeyRoute: typeof ChatSessionKeyRoute
   ChatIndexRoute: typeof ChatIndexRoute
+  ApiAdminCleanupRoute: typeof ApiAdminCleanupRoute
   ApiClaudeProxySplatRoute: typeof ApiClaudeProxySplatRoute
   ApiDashboardOverviewRoute: typeof ApiDashboardOverviewRoute
   ApiExternalMemoryCandidatesRoute: typeof ApiExternalMemoryCandidatesRoute
@@ -2256,6 +2371,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AgoraRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/$': {
       id: '/$'
       path: '/$'
@@ -2283,6 +2405,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/chat/'
       preLoaderRoute: typeof ChatIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/tasks/$taskId': {
+      id: '/tasks/$taskId'
+      path: '/$taskId'
+      fullPath: '/tasks/$taskId'
+      preLoaderRoute: typeof TasksTaskIdRouteImport
+      parentRoute: typeof TasksRoute
     }
     '/settings/providers': {
       id: '/settings/providers'
@@ -2872,6 +3001,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSwarmMemorySearchRouteImport
       parentRoute: typeof ApiSwarmMemoryRoute
     }
+    '/api/swarm-lifecycle/status': {
+      id: '/api/swarm-lifecycle/status'
+      path: '/status'
+      fullPath: '/api/swarm-lifecycle/status'
+      preLoaderRoute: typeof ApiSwarmLifecycleStatusRouteImport
+      parentRoute: typeof ApiSwarmLifecycleRoute
+    }
     '/api/skills/uninstall': {
       id: '/api/skills/uninstall'
       path: '/uninstall'
@@ -3187,6 +3323,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiArtifactsArtifactIdRouteImport
       parentRoute: typeof ApiArtifactsRoute
     }
+    '/api/admin/cleanup': {
+      id: '/api/admin/cleanup'
+      path: '/api/admin/cleanup'
+      fullPath: '/api/admin/cleanup'
+      preLoaderRoute: typeof ApiAdminCleanupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/swarm-missions/$missionId/unarchive': {
+      id: '/api/swarm-missions/$missionId/unarchive'
+      path: '/$missionId/unarchive'
+      fullPath: '/api/swarm-missions/$missionId/unarchive'
+      preLoaderRoute: typeof ApiSwarmMissionsMissionIdUnarchiveRouteImport
+      parentRoute: typeof ApiSwarmMissionsRoute
+    }
+    '/api/swarm-missions/$missionId/delete': {
+      id: '/api/swarm-missions/$missionId/delete'
+      path: '/$missionId/delete'
+      fullPath: '/api/swarm-missions/$missionId/delete'
+      preLoaderRoute: typeof ApiSwarmMissionsMissionIdDeleteRouteImport
+      parentRoute: typeof ApiSwarmMissionsRoute
+    }
+    '/api/swarm-missions/$missionId/archive': {
+      id: '/api/swarm-missions/$missionId/archive'
+      path: '/$missionId/archive'
+      fullPath: '/api/swarm-missions/$missionId/archive'
+      preLoaderRoute: typeof ApiSwarmMissionsMissionIdArchiveRouteImport
+      parentRoute: typeof ApiSwarmMissionsRoute
+    }
+    '/api/swarm-kanban/$cardId/unarchive': {
+      id: '/api/swarm-kanban/$cardId/unarchive'
+      path: '/$cardId/unarchive'
+      fullPath: '/api/swarm-kanban/$cardId/unarchive'
+      preLoaderRoute: typeof ApiSwarmKanbanCardIdUnarchiveRouteImport
+      parentRoute: typeof ApiSwarmKanbanRoute
+    }
+    '/api/swarm-kanban/$cardId/archive': {
+      id: '/api/swarm-kanban/$cardId/archive'
+      path: '/$cardId/archive'
+      fullPath: '/api/swarm-kanban/$cardId/archive'
+      preLoaderRoute: typeof ApiSwarmKanbanCardIdArchiveRouteImport
+      parentRoute: typeof ApiSwarmKanbanRoute
+    }
     '/api/sessions/$sessionKey/status': {
       id: '/api/sessions/$sessionKey/status'
       path: '/$sessionKey/status'
@@ -3256,6 +3434,16 @@ const SettingsRouteChildren: SettingsRouteChildren = {
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
   SettingsRouteChildren,
 )
+
+interface TasksRouteChildren {
+  TasksTaskIdRoute: typeof TasksTaskIdRoute
+}
+
+const TasksRouteChildren: TasksRouteChildren = {
+  TasksTaskIdRoute: TasksTaskIdRoute,
+}
+
+const TasksRouteWithChildren = TasksRoute._addFileChildren(TasksRouteChildren)
 
 interface ApiArtifactsRouteChildren {
   ApiArtifactsArtifactIdRoute: typeof ApiArtifactsArtifactIdRoute
@@ -3403,6 +3591,31 @@ const ApiSkillsRouteWithChildren = ApiSkillsRoute._addFileChildren(
   ApiSkillsRouteChildren,
 )
 
+interface ApiSwarmKanbanRouteChildren {
+  ApiSwarmKanbanCardIdArchiveRoute: typeof ApiSwarmKanbanCardIdArchiveRoute
+  ApiSwarmKanbanCardIdUnarchiveRoute: typeof ApiSwarmKanbanCardIdUnarchiveRoute
+}
+
+const ApiSwarmKanbanRouteChildren: ApiSwarmKanbanRouteChildren = {
+  ApiSwarmKanbanCardIdArchiveRoute: ApiSwarmKanbanCardIdArchiveRoute,
+  ApiSwarmKanbanCardIdUnarchiveRoute: ApiSwarmKanbanCardIdUnarchiveRoute,
+}
+
+const ApiSwarmKanbanRouteWithChildren = ApiSwarmKanbanRoute._addFileChildren(
+  ApiSwarmKanbanRouteChildren,
+)
+
+interface ApiSwarmLifecycleRouteChildren {
+  ApiSwarmLifecycleStatusRoute: typeof ApiSwarmLifecycleStatusRoute
+}
+
+const ApiSwarmLifecycleRouteChildren: ApiSwarmLifecycleRouteChildren = {
+  ApiSwarmLifecycleStatusRoute: ApiSwarmLifecycleStatusRoute,
+}
+
+const ApiSwarmLifecycleRouteWithChildren =
+  ApiSwarmLifecycleRoute._addFileChildren(ApiSwarmLifecycleRouteChildren)
+
 interface ApiSwarmMemoryRouteChildren {
   ApiSwarmMemorySearchRoute: typeof ApiSwarmMemorySearchRoute
 }
@@ -3414,6 +3627,22 @@ const ApiSwarmMemoryRouteChildren: ApiSwarmMemoryRouteChildren = {
 const ApiSwarmMemoryRouteWithChildren = ApiSwarmMemoryRoute._addFileChildren(
   ApiSwarmMemoryRouteChildren,
 )
+
+interface ApiSwarmMissionsRouteChildren {
+  ApiSwarmMissionsMissionIdArchiveRoute: typeof ApiSwarmMissionsMissionIdArchiveRoute
+  ApiSwarmMissionsMissionIdDeleteRoute: typeof ApiSwarmMissionsMissionIdDeleteRoute
+  ApiSwarmMissionsMissionIdUnarchiveRoute: typeof ApiSwarmMissionsMissionIdUnarchiveRoute
+}
+
+const ApiSwarmMissionsRouteChildren: ApiSwarmMissionsRouteChildren = {
+  ApiSwarmMissionsMissionIdArchiveRoute: ApiSwarmMissionsMissionIdArchiveRoute,
+  ApiSwarmMissionsMissionIdDeleteRoute: ApiSwarmMissionsMissionIdDeleteRoute,
+  ApiSwarmMissionsMissionIdUnarchiveRoute:
+    ApiSwarmMissionsMissionIdUnarchiveRoute,
+}
+
+const ApiSwarmMissionsRouteWithChildren =
+  ApiSwarmMissionsRoute._addFileChildren(ApiSwarmMissionsRouteChildren)
 
 interface ApiSwarmRuntimeRouteChildren {
   ApiSwarmRuntimeResetRoute: typeof ApiSwarmRuntimeResetRoute
@@ -3445,6 +3674,7 @@ const ApiHermesworldReservationsRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SplatRoute: SplatRoute,
+  AdminRoute: AdminRoute,
   AgoraRoute: AgoraRoute,
   ConductorRoute: ConductorRoute,
   DashboardRoute: DashboardRoute,
@@ -3463,7 +3693,7 @@ const rootRouteChildren: RootRouteChildren = {
   SkillsRoute: SkillsRoute,
   SwarmRoute: SwarmRoute,
   Swarm2Route: Swarm2Route,
-  TasksRoute: TasksRoute,
+  TasksRoute: TasksRouteWithChildren,
   TerminalRoute: TerminalRoute,
   VtCapitalRoute: VtCapitalRoute,
   WorldRoute: WorldRoute,
@@ -3522,11 +3752,11 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSwarmDispatchRoute: ApiSwarmDispatchRoute,
   ApiSwarmEnvironmentRoute: ApiSwarmEnvironmentRoute,
   ApiSwarmHealthRoute: ApiSwarmHealthRoute,
-  ApiSwarmKanbanRoute: ApiSwarmKanbanRoute,
-  ApiSwarmLifecycleRoute: ApiSwarmLifecycleRoute,
+  ApiSwarmKanbanRoute: ApiSwarmKanbanRouteWithChildren,
+  ApiSwarmLifecycleRoute: ApiSwarmLifecycleRouteWithChildren,
   ApiSwarmMemoryRoute: ApiSwarmMemoryRouteWithChildren,
   ApiSwarmMissionEventsRoute: ApiSwarmMissionEventsRoute,
-  ApiSwarmMissionsRoute: ApiSwarmMissionsRoute,
+  ApiSwarmMissionsRoute: ApiSwarmMissionsRouteWithChildren,
   ApiSwarmOrchestratorLoopRoute: ApiSwarmOrchestratorLoopRoute,
   ApiSwarmProjectRoute: ApiSwarmProjectRoute,
   ApiSwarmReportsRoute: ApiSwarmReportsRoute,
@@ -3545,6 +3775,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiWorkspaceRoute: ApiWorkspaceRoute,
   ChatSessionKeyRoute: ChatSessionKeyRoute,
   ChatIndexRoute: ChatIndexRoute,
+  ApiAdminCleanupRoute: ApiAdminCleanupRoute,
   ApiClaudeProxySplatRoute: ApiClaudeProxySplatRoute,
   ApiDashboardOverviewRoute: ApiDashboardOverviewRoute,
   ApiExternalMemoryCandidatesRoute: ApiExternalMemoryCandidatesRoute,

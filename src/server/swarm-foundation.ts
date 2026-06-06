@@ -657,3 +657,14 @@ export function getWorkspacePluginRoots(workspaceRoot = process.cwd()): Array<{
     { root: path.join(workspaceRoot, '.hermes', 'plugins'), source: 'project' },
   ]
 }
+
+// Heartbeat store
+const heartbeatStore = new Map<string, number>()
+
+export function bumpHeartbeat(swarmId: string): void {
+  heartbeatStore.set(swarmId, Date.now())
+}
+
+export function getHeartbeat(swarmId: string): number {
+  return heartbeatStore.get(swarmId) ?? 0
+}

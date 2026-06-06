@@ -3,17 +3,32 @@
  * Connects to /api/gateway/sessions and tracks live agent sessions.
  */
 import { create } from 'zustand'
-import { BASE_URL, type GatewaySession } from '@/lib/gateway-api'
+import type { GatewaySession } from '@/lib/gateway-api'
+import { BASE_URL } from '@/lib/gateway-api'
+import type {
+  CanonicalSwarmStatus,
+  RecommendedAction,
+  SwarmStatusPayload,
+} from '@/lib/swarm/canonical-state'
+import { STALE_MS } from '@/lib/swarm/canonical-state'
 
 export type SwarmSession = GatewaySession & {
   /** Derived status for UI rendering */
   swarmStatus: 'running' | 'thinking' | 'complete' | 'failed' | 'error' | 'idle'
   /** Time since last update in ms */
   staleness: number
+  /** Canonical incident console status */
+  canonicalStatus: CanonicalSwarmStatus
+  /** Last heartbeat timestamp for this swarm */
+  lastHeartbeatAt: number
+  /** Whether this swarm session is stale (no heartbeat in 45s) */
+  isStale: boolean
+  /** Recommended action from canonical state machine */
+  recommendedAction: RecommendedAction | null
 }
 
 type SwarmState = {
-  sessions: SwarmSession[]
+  sessions: Array<SwarmSession>
   isConnected: boolean
   lastFetchedAt: number
   error: string | null
@@ -77,7 +92,7 @@ function getSessionErrorMessage(session: GatewaySession): string | null {
   )
 }
 
-function toSwarmSession(session: GatewaySession): SwarmSession {
+function toSwarmSession(session: GatewaySession, statusPayload?: SwarmStatusPayload): SwarmSession {
   const updatedAt =
     typeof session.updatedAt === 'number'
       ? session.updatedAt
@@ -88,11 +103,17 @@ function toSwarmSession(session: GatewaySession): SwarmSession {
     getStopReason(session) === 'error' ||
     getSessionErrorMessage(session) !== null
   const derivedStatus = deriveSwarmStatus(session)
+  const lastHeartbeatAt = statusPayload?.lastHeartbeatAt ?? 0
+  const isStale = lastHeartbeatAt > 0 && (Date.now() - lastHeartbeatAt) > STALE_MS
 
   return {
     ...session,
     swarmStatus: hasExplicitError ? 'error' : derivedStatus,
     staleness: Date.now() - updatedAt,
+    canonicalStatus: statusPayload?.status ?? 'not_started',
+    lastHeartbeatAt,
+    isStale,
+    recommendedAction: statusPayload?.recommendedAction ?? null,
   }
 }
 
@@ -109,7 +130,7 @@ export const useSwarmStore = create<SwarmState>((set, get) => ({
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = await res.json()
 
-      const rawSessions: GatewaySession[] =
+      const rawSessions: Array<GatewaySession> =
         json?.data?.sessions ?? json?.sessions ?? []
 
       // Only show subagent sessions in the swarm (not main chat, cron, etc.)
@@ -133,7 +154,32 @@ export const useSwarmStore = create<SwarmState>((set, get) => ({
         return true
       })
 
-      const swarmSessions = agentSessions.map(toSwarmSession)
+      // Fetch canonical status for active swarms
+      const statusPayloads = new Map<string, SwarmStatusPayload>()
+      await Promise.allSettled(
+        agentSessions.map(async (s) => {
+          const swarmId = typeof s.key === 'string' ? s.key : ''
+          if (!swarmId) return
+          try {
+            const statusRes = await fetch(
+              `/api/swarm-lifecycle/status?swarmId=${encodeURIComponent(swarmId)}`,
+            )
+            if (statusRes.ok) {
+              const payload = (await statusRes.json()) as SwarmStatusPayload & { ok?: boolean }
+              if (payload.ok !== false) {
+                statusPayloads.set(swarmId, payload)
+              }
+            }
+          } catch {
+            // best-effort
+          }
+        }),
+      )
+
+      const swarmSessions = agentSessions.map((s) => {
+        const swarmId = typeof s.key === 'string' ? s.key : ''
+        return toSwarmSession(s, statusPayloads.get(swarmId))
+      })
 
       // Sort: running/thinking first, then by updatedAt desc
       swarmSessions.sort((a, b) => {

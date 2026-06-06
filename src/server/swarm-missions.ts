@@ -71,6 +71,8 @@ export type SwarmMission = {
   state: SwarmMissionState
   createdAt: number
   updatedAt: number
+  archivedAt?: number | null
+  deletedAt?: number | null
   runId: string | null
   dispatchState: 'idle' | 'queued' | 'dispatching' | 'stale' | 'blocked' | 'done'
   dispatchRequestedAt: number | null
@@ -1074,4 +1076,40 @@ export function listSwarmReports(input?: {
     .filter((report) => !input?.workerId || report.workerId === input.workerId)
     .sort((a, b) => b.recordedAt - a.recordedAt)
     .slice(0, limit)
+}
+
+export function archiveSwarmMission(missionId: string): SwarmMission | null {
+  const store = readStore()
+  const mission = store.missions.find((m) => m.id === missionId)
+  if (!mission || mission.deletedAt) return null
+  if (mission.archivedAt) return mission
+  mission.archivedAt = now()
+  mission.updatedAt = now()
+  writeStore(store)
+  return mission
+}
+
+export function unarchiveSwarmMission(missionId: string): SwarmMission | null {
+  const store = readStore()
+  const mission = store.missions.find((m) => m.id === missionId)
+  if (!mission || !mission.archivedAt) return mission ?? null
+  mission.archivedAt = null
+  mission.updatedAt = now()
+  writeStore(store)
+  return mission
+}
+
+export function deleteSwarmMission(missionId: string): SwarmMission | null {
+  const store = readStore()
+  const mission = store.missions.find((m) => m.id === missionId)
+  if (!mission) return null
+  if (mission.deletedAt) return mission
+  mission.deletedAt = now()
+  mission.updatedAt = now()
+  writeStore(store)
+  return mission
+}
+
+export function listArchivedMissions(): Array<SwarmMission> {
+  return readStore().missions.filter((m) => m.archivedAt && !m.deletedAt)
 }

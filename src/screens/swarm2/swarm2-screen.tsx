@@ -26,10 +26,12 @@ import { Swarm2Wires } from './swarm2-wires'
 import { Swarm2ActivityFeed } from './swarm2-activity-feed'
 import { Swarm2KanbanBoard } from './swarm2-kanban-board'
 import { Swarm2ReportsView, buildSwarm2InboxLanes, type Swarm2InboxItem } from './swarm2-reports-view'
+import { IncidentLayout } from './incident-layout'
 import { RouterChat } from '@/components/swarm/router-chat'
 import { SwarmTerminal } from '@/components/swarm/swarm-terminal'
 import { WorkflowHelpModal } from '@/components/workflow-help-modal'
 import { cn } from '@/lib/utils'
+import type { SwarmStatusPayload } from '@/lib/swarm/canonical-state'
 
 const SWARM2_ROOM_STORAGE_KEY = 'claude-swarm2-room-v1'
 
@@ -1052,6 +1054,20 @@ export function Swarm2Screen() {
     refetchInterval: 30_000,
   })
 
+  // Canonical incident console status
+  const incidentStatusQuery = useQuery<SwarmStatusPayload | null>({
+    queryKey: ['swarm2', 'incident-status'],
+    queryFn: async () => {
+      const res = await fetch('/api/swarm-lifecycle/status')
+      if (!res.ok) return null
+      const data = (await res.json()) as SwarmStatusPayload & { ok?: boolean }
+      return data.ok === false ? null : data
+    },
+    refetchInterval: 15_000,
+  })
+  const incidentStatus = incidentStatusQuery.data ?? null
+  const incidentSwarmId = incidentStatus?.swarmId ?? 'default'
+
   const startAgentSession = useCallback(
     async (workerId: string) => {
       setPendingTmux((prev) => new Set(prev).add(workerId))
@@ -1615,7 +1631,7 @@ export function Swarm2Screen() {
                 className="inline-flex items-center gap-2 rounded-lg bg-[var(--theme-accent)] px-4 py-2 text-sm font-medium text-primary-950 shadow-sm hover:bg-[var(--theme-accent-strong)]"
               >
                 <HugeiconsIcon icon={MessageMultiple01Icon} size={13} />
-                Add Swarm
+                Start / Resume Swarm
               </button>
             </div>
           </div>
@@ -1680,6 +1696,13 @@ export function Swarm2Screen() {
             selectedId={selectedId}
             onSelect={(workerId) => setSelectedId(workerId)}
           />
+        ) : null}
+
+        {/* Incident Console panel — shown when canonical status is available */}
+        {incidentStatus ? (
+          <div className="mt-4 rounded-xl border border-[var(--theme-border)] bg-[var(--theme-card)] overflow-hidden">
+            <IncidentLayout swarmId={incidentSwarmId} status={incidentStatus} />
+          </div>
         ) : null}
       </div>
 

@@ -6,7 +6,7 @@ import { isAuthenticated } from '../../server/auth-middleware'
 import { getProfilesDir } from '../../server/claude-paths'
 import { newestCheckpointFromMessages, readRuntimeJson, type ParsedSwarmCheckpoint } from '../../server/swarm-checkpoints'
 import { readWorkerMessages } from '../../server/swarm-chat-reader'
-import { getSwarmProfilePath, listSwarmWorkerIds } from '../../server/swarm-foundation'
+import { getSwarmProfilePath, listSwarmWorkerIds, bumpHeartbeat } from '../../server/swarm-foundation'
 import { appendMissionContinuation, markMissionAssignmentsReviewedByWorker, recordMissionCheckpoint } from '../../server/swarm-missions'
 import { appendSwarmMemoryEvent } from '../../server/swarm-memory'
 import { publishSwarmActionPrompt, publishSwarmCheckpointNotification } from '../../server/swarm-notifications'
@@ -97,6 +97,7 @@ function writeRuntimePatch(workerId: string, patch: Record<string, unknown>, dry
   mkdirSync(profilePath, { recursive: true })
   const current = readRuntimeJson(runtimePath)
   writeFileSync(runtimePath, JSON.stringify({ ...current, ...patch }, null, 2) + '\n')
+  bumpHeartbeat(workerId)
   return runtimePath
 }
 

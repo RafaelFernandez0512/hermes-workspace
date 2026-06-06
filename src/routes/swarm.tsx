@@ -5,7 +5,7 @@ import { Swarm2Screen } from '@/screens/swarm2/swarm2-screen'
 export const Route = createFileRoute('/swarm')({
   ssr: false,
   component: function SwarmRoute() {
-    usePageTitle('Swarm')
+    usePageTitle('Swarm — Incident Console')
     return <Swarm2Screen />
   },
   errorComponent: function SwarmError({ error }) {
