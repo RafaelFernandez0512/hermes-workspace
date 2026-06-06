@@ -94,6 +94,8 @@ export const Route = createFileRoute('/api/history')({
                 content: [{ type: 'text', text: m.content }],
                 timestamp: m.timestamp,
                 historyIndex: index,
+                ...(m.model ? { model: m.model } : {}),
+                ...(m.details ? { details: m.details } : {}),
               })),
             })
           }
@@ -118,6 +120,8 @@ export const Route = createFileRoute('/api/history')({
                   content: [{ type: 'text', text: m.content }],
                   timestamp: m.timestamp,
                   historyIndex: index,
+                  ...(m.model ? { model: m.model } : {}),
+                  ...(m.details ? { details: m.details } : {}),
                 })),
               })
             }

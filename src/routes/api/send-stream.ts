@@ -352,8 +352,10 @@ export const Route = createFileRoute('/api/send-stream')({
         // Check if the selected model is a local provider model — force portable + direct routing
         let chatMode = getChatMode()
         let localBaseUrl: string | undefined
-        const requestModel = typeof body.model === 'string' ? body.model : ''
-        const bareModel = requestModel.includes('/') ? requestModel.split('/').slice(1).join('/') : requestModel
+        const requestModel = typeof body.model === 'string' ? body.model.trim() : ''
+        const bareModel = requestModel.includes('/')
+          ? requestModel.split('/').slice(1).join('/').trim()
+          : requestModel
         if (requestModel) {
           const discoveredModels = getDiscoveredModels()
           const localMatch = discoveredModels.find((m) => m.id === requestModel || m.id === bareModel)
@@ -534,6 +536,7 @@ export const Route = createFileRoute('/api/send-stream')({
                   rawSessionKey ||
                   portableSessionKey
                 let accumulated = ''
+                let actualModel = bareModel || requestModel || ''
 
                 activeRunId = runId
                 registerActiveSendRun(runId)
@@ -621,8 +624,7 @@ export const Route = createFileRoute('/api/send-stream')({
                       const responsesStream = streamResponses({
                         input: scopedMessage,
                         conversationHistory: effectiveHistory,
-                        model:
-                          typeof body.model === 'string' ? body.model : undefined,
+                        model: bareModel || requestModel || undefined,
                         sessionId: portableSessionKey,
                         signal: abortController.signal,
                       })
@@ -725,6 +727,7 @@ export const Route = createFileRoute('/api/send-stream')({
                         role: 'assistant',
                         content: accumulated,
                         timestamp: Date.now(),
+                        details: actualModel ? { model: actualModel } : undefined,
                       })
                       touchLocalSession(portableSessionKey)
                       persistActiveRun((runSessionKey, activeId) =>
@@ -734,12 +737,19 @@ export const Route = createFileRoute('/api/send-stream')({
                         state: 'complete',
                         sessionKey: portableSessionKey,
                         runId,
+                        model: actualModel || undefined,
                         message: {
                           role: 'assistant',
                           content: [
                             ...(thinking ? [{ type: 'thinking', thinking }] : []),
                             { type: 'text', text: accumulated },
                           ],
+                          ...(actualModel
+                            ? {
+                                model: actualModel,
+                                details: { model: actualModel },
+                              }
+                            : {}),
                         },
                       })
                       closeStream()
@@ -758,7 +768,7 @@ export const Route = createFileRoute('/api/send-stream')({
                   }
 
                   const stream = await openaiChat(portableMessages, {
-                    model: localBaseUrl ? bareModel : (typeof body.model === 'string' ? body.model : undefined),
+                    model: bareModel || requestModel || undefined,
                     temperature:
                       typeof body.temperature === 'number'
                         ? body.temperature
@@ -772,7 +782,11 @@ export const Route = createFileRoute('/api/send-stream')({
                   let thinking = ''
                   let toolEventCount = 0
                   for await (const chunk of stream) {
-                    if (chunk.type === 'reasoning') {
+                    if (chunk.type === 'meta') {
+                      if (typeof chunk.model === 'string' && chunk.model.trim()) {
+                        actualModel = chunk.model.trim()
+                      }
+                    } else if (chunk.type === 'reasoning') {
                       thinking += chunk.text
                       persistActiveRun((runSessionKey, activeId) =>
                         setRunThinking(runSessionKey, activeId, thinking),
@@ -839,6 +853,7 @@ export const Route = createFileRoute('/api/send-stream')({
                     role: 'assistant',
                     content: accumulated,
                     timestamp: Date.now(),
+                    details: actualModel ? { model: actualModel } : undefined,
                   })
                   touchLocalSession(portableSessionKey)
 
@@ -849,12 +864,19 @@ export const Route = createFileRoute('/api/send-stream')({
                     state: 'complete',
                     sessionKey: portableSessionKey,
                     runId,
+                    model: actualModel || undefined,
                     message: {
                       role: 'assistant',
                       content: [
                         ...(thinking ? [{ type: 'thinking', thinking }] : []),
                         { type: 'text', text: accumulated },
                       ],
+                      ...(actualModel
+                        ? {
+                            model: actualModel,
+                            details: { model: actualModel },
+                          }
+                        : {}),
                     },
                   })
                   closeStream()

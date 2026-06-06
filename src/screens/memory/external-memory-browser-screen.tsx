@@ -7,9 +7,13 @@ import { cn } from '@/lib/utils'
 type ExternalMemoryProvider = {
   id: string
   label: string
+  kind: 'custom' | 'hindsight'
   capabilities: Array<string>
-  dbPath: string
-  configPath: string
+  dbPath?: string
+  configPath?: string
+  apiUrl?: string
+  bankId?: string
+  mode?: string
   available: boolean
 }
 
@@ -115,7 +119,16 @@ function stateClasses(state: string): string {
 function metadataPreview(metadata: Record<string, unknown>): string {
   const entries = Object.entries(metadata).slice(0, 4)
   if (entries.length === 0) return 'No metadata'
-  return entries.map(([key, value]) => `${key}: ${String(value)}`).join(' · ')
+  return entries
+    .map(([key, value]) => {
+      const normalized = Array.isArray(value)
+        ? value.join(', ')
+        : value && typeof value === 'object'
+          ? JSON.stringify(value)
+          : String(value)
+      return `${key}: ${normalized}`
+    })
+    .join(' · ')
 }
 
 export function formatStateFilterLabel(
@@ -127,8 +140,12 @@ export function formatStateFilterLabel(
 }
 
 export function candidateActionLabels(
+  provider: Pick<ExternalMemoryProvider, 'kind' | 'capabilities'>,
   candidate: Pick<ExternalMemoryCandidate, 'state'>,
 ): Array<string> {
+  if (provider.kind === 'hindsight') {
+    return provider.capabilities.includes('delete') ? ['Delete'] : []
+  }
   const labels = ['Edit']
   if (candidate.state !== 'approved') labels.push('Approve')
   if (candidate.state !== 'rejected') labels.push('Reject')
@@ -168,6 +185,16 @@ export function ExternalMemoryBrowserScreen() {
     setProviderId(providersQuery.data?.active || providers[0]?.id || '')
   }, [providerId, providers, providersQuery.data?.active])
 
+  const activeProvider =
+    providers.find((provider) => provider.id === providerId) ?? null
+  const isReviewProvider = activeProvider?.kind === 'custom'
+
+  useEffect(() => {
+    if (activeProvider?.kind === 'hindsight' && state !== 'all') {
+      setState('all')
+    }
+  }, [activeProvider?.kind, state])
+
   const listQuery = useQuery({
     queryKey: ['external-memory', 'candidates', providerId, state],
     queryFn: () =>
@@ -180,7 +207,7 @@ export function ExternalMemoryBrowserScreen() {
   const countsQuery = useQuery({
     queryKey: ['external-memory', 'candidate-counts', providerId],
     queryFn: () => readStateCounts(providerId),
-    enabled: Boolean(providerId) && !searchTerm,
+    enabled: Boolean(providerId) && !searchTerm && isReviewProvider,
   })
 
   const searchQuery = useQuery({
@@ -210,8 +237,6 @@ export function ExternalMemoryBrowserScreen() {
     () => candidates.find((candidate) => candidate.id === selectedId) ?? null,
     [candidates, selectedId],
   )
-  const activeProvider =
-    providers.find((provider) => provider.id === providerId) ?? null
   const isLoading =
     providersQuery.isLoading || listQuery.isLoading || searchQuery.isLoading
   const error = providersQuery.error || listQuery.error || searchQuery.error
@@ -260,8 +285,8 @@ export function ExternalMemoryBrowserScreen() {
             No external memory providers
           </h2>
           <p className="mt-2 text-sm text-primary-600 dark:text-neutral-400">
-            Register providers in $HERMES_HOME/external_memory_providers.json to
-            inspect external memory review queues here.
+            Hermes can auto-detect native Hindsight, or you can register custom
+            review-queue providers in $HERMES_HOME/external_memory_providers.json.
           </p>
         </div>
       </div>
@@ -277,7 +302,9 @@ export function ExternalMemoryBrowserScreen() {
               External memory
             </h2>
             <p className="text-xs text-primary-500 dark:text-neutral-400">
-              Review queues backed by custom providers.
+              {activeProvider?.kind === 'hindsight'
+                ? `Native Hindsight memory browser${activeProvider.bankId ? ` · bank ${activeProvider.bankId}` : ''}`
+                : 'Review queues backed by custom providers.'}
             </p>
           </div>
 
@@ -301,29 +328,35 @@ export function ExternalMemoryBrowserScreen() {
             <input
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search text, metadata, source..."
+              placeholder={
+                activeProvider?.kind === 'hindsight'
+                  ? 'Search document text, tags, metadata...'
+                  : 'Search text, metadata, source...'
+              }
               className="w-full rounded-xl border border-primary-200 bg-white py-2 pr-3 pl-9 text-sm text-primary-900 outline-none dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
             />
           </div>
 
-          <div className="grid grid-cols-4 gap-1 text-xs">
-            {MEMORY_STATES.map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setState(item)}
-                disabled={Boolean(searchTerm)}
-                className={cn(
-                  'rounded-lg border px-2 py-1.5 capitalize transition disabled:opacity-40',
-                  state === item
-                    ? 'border-primary-500 bg-primary-100 text-primary-900 dark:border-blue-500 dark:bg-blue-500/15 dark:text-blue-100'
-                    : 'border-primary-200 text-primary-600 hover:bg-primary-50 dark:border-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-900',
-                )}
-              >
-                {formatStateFilterLabel(item, stateCounts)}
-              </button>
-            ))}
-          </div>
+          {isReviewProvider ? (
+            <div className="grid grid-cols-4 gap-1 text-xs">
+              {MEMORY_STATES.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setState(item)}
+                  disabled={Boolean(searchTerm)}
+                  className={cn(
+                    'rounded-lg border px-2 py-1.5 capitalize transition disabled:opacity-40',
+                    state === item
+                      ? 'border-primary-500 bg-primary-100 text-primary-900 dark:border-blue-500 dark:bg-blue-500/15 dark:text-blue-100'
+                      : 'border-primary-200 text-primary-600 hover:bg-primary-50 dark:border-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-900',
+                  )}
+                >
+                  {formatStateFilterLabel(item, stateCounts)}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -391,6 +424,12 @@ export function ExternalMemoryBrowserScreen() {
                 <h1 className="mt-1 text-xl font-semibold text-primary-950 dark:text-neutral-50">
                   {activeProvider?.label || selected.provider}
                 </h1>
+                {activeProvider?.kind === 'hindsight' ? (
+                  <p className="mt-1 text-xs text-primary-500 dark:text-neutral-400">
+                    {activeProvider.mode || 'external'}
+                    {activeProvider.apiUrl ? ` · ${activeProvider.apiUrl}` : ''}
+                  </p>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span
@@ -401,7 +440,7 @@ export function ExternalMemoryBrowserScreen() {
                 >
                   {selected.state}
                 </span>
-                {candidateActionLabels(selected).map((label) => (
+                {candidateActionLabels(activeProvider || { kind: 'custom', capabilities: [] }, selected).map((label) => (
                   <button
                     key={label}
                     type="button"

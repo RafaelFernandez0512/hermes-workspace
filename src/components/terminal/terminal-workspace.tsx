@@ -369,8 +369,12 @@ export function TerminalWorkspace({
       // Throttled terminal writes — yields to input events between flushes
       let writeBuf = ''
       let flushTimer: ReturnType<typeof setTimeout> | null = null
-      const FLUSH_MS = 80 // ~12fps — generous gaps for input
-      const MAX_BUF = 8192 // drop old data if buffer overflows (screen redraws)
+      // 16ms ≈ 60fps — fast enough for TUI redraws without starving input events
+      const FLUSH_MS = 16
+      // 512KB safety net; flush immediately if a single burst exceeds 64KB so
+      // xterm receives complete ANSI frames and alt-screen sequences aren't split
+      const MAX_BUF = 512 * 1024
+      const IMMEDIATE_FLUSH_THRESHOLD = 64 * 1024
       function flushWrites() {
         flushTimer = null
         if (writeBuf && terminal) {
@@ -381,11 +385,14 @@ export function TerminalWorkspace({
       }
       function queueWrite(data: string) {
         writeBuf += data
-        // If buffer is huge (TUI redraw flood), keep only the tail
         if (writeBuf.length > MAX_BUF) {
-          writeBuf = writeBuf.slice(-MAX_BUF)
+          // Prefer cutting before the last clear-screen so ANSI state is intact
+          const lastClear = writeBuf.lastIndexOf('\x1b[2J')
+          writeBuf = lastClear > 0 ? writeBuf.slice(lastClear) : writeBuf.slice(-MAX_BUF)
         }
-        if (!flushTimer) flushTimer = setTimeout(flushWrites, FLUSH_MS)
+        if (!flushTimer) {
+          flushTimer = setTimeout(flushWrites, writeBuf.length > IMMEDIATE_FLUSH_THRESHOLD ? 0 : FLUSH_MS)
+        }
       }
 
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime safety

@@ -118,11 +118,18 @@ export function readSwarmRoster(ids: Array<string> = []): SwarmRoster {
   try {
     const raw = yaml.parse(readFileSync(SWARM_ROSTER_PATH, 'utf-8')) as unknown
     const parsed = SwarmRosterSchema.parse(raw)
+    const requested = [...new Set(ids.filter((id) => id.trim().length > 0))]
     const byId = new Map(parsed.workers.map((worker) => [worker.id, worker]))
-    for (const fallback of fallbackRoster(ids).workers) {
-      if (!byId.has(fallback.id)) byId.set(fallback.id, fallback)
+
+    if (requested.length > 0) {
+      const fallbackById = new Map(fallbackRoster(requested).workers.map((worker) => [worker.id, worker]))
+      return {
+        version: parsed.version,
+        workers: requested.map((id) => byId.get(id) ?? fallbackById.get(id)).filter(Boolean) as SwarmRosterWorker[],
+      }
     }
-    return { version: parsed.version, workers: [...byId.values()] }
+
+    return { version: parsed.version, workers: parsed.workers }
   } catch {
     return fallbackRoster(ids)
   }

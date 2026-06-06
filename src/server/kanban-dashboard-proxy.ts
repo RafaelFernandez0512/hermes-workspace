@@ -46,6 +46,37 @@ export type DashboardKanbanTask = {
   workspace_path?: string | null
 }
 
+export type DashboardKanbanRun = {
+  id: number
+  task_id: string
+  profile?: string | null
+  step_key?: string | null
+  status?: string | null
+  claim_lock?: string | null
+  claim_expires?: number | null
+  worker_pid?: number | null
+  max_runtime_seconds?: number | null
+  last_heartbeat_at?: number | null
+  started_at?: number | null
+  ended_at?: number | null
+  outcome?: string | null
+  summary?: string | null
+  metadata?: Record<string, unknown> | null
+  error?: string | null
+}
+
+export type DashboardKanbanTaskDetailResponse = {
+  task?: DashboardKanbanTask
+  comments?: Array<unknown>
+  events?: Array<unknown>
+  attachments?: Array<unknown>
+  links?: {
+    parents?: Array<string>
+    children?: Array<string>
+  }
+  runs?: Array<DashboardKanbanRun>
+}
+
 export type DashboardKanbanBoardResponse = {
   columns: Array<{
     name: string
@@ -125,6 +156,24 @@ export async function fetchDashboardKanbanTask(
       board ? { board } : {},
     )
     return wrapped.task ?? null
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('→ 404')) return null
+    throw err
+  }
+}
+
+/** Fetch one task with attempt history. Returns null on 404. */
+export async function fetchDashboardKanbanTaskDetail(
+  taskId: string,
+  board?: string,
+): Promise<DashboardKanbanTaskDetailResponse | null> {
+  try {
+    const wrapped = await dashboardFetch<DashboardKanbanTaskDetailResponse>(
+      `/api/plugins/kanban/tasks/${encodeURIComponent(taskId)}`,
+      {},
+      board ? { board } : {},
+    )
+    return wrapped.task ? wrapped : null
   } catch (err) {
     if (err instanceof Error && err.message.includes('→ 404')) return null
     throw err

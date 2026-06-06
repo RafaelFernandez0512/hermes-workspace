@@ -8,6 +8,7 @@ import { isAuthenticated } from '../../server/auth-middleware'
 import { rosterByWorkerId } from '../../server/swarm-roster'
 import { resolveSwarmModelLabel } from '../../server/swarm-model-resolver'
 import { syncSwarmProfileModel } from '../../server/swarm-profile-config'
+import { buildHermesTmuxLaunchCommand } from './swarm-dispatch'
 
 // Inlined to avoid SSR module-resolution races against freshly-written
 // helpers; mirrors `src/server/claude-paths.ts` getProfilesDir().
@@ -39,28 +40,20 @@ type StartRequest = {
 }
 
 const TMUX_BIN_CANDIDATES = [
+  process.env.HERMES_TMUX_BIN,
+  process.env.CLAUDE_TMUX_BIN,
   process.env.TMUX_BIN,
-  '/opt/homebrew/bin/tmux',
-  '/usr/local/bin/tmux',
   join(homedir(), '.local', 'bin', 'tmux'),
+  '/usr/bin/tmux',
+  '/usr/local/bin/tmux',
+  '/opt/homebrew/bin/tmux',
   'tmux',
 ].filter((value): value is string => Boolean(value))
 
 function resolveTmuxBin(): string | null {
   for (const candidate of TMUX_BIN_CANDIDATES) {
     if (candidate.includes('/')) {
-      // On this launchd-started Workspace, existsSync can incorrectly miss
-      // Homebrew binaries and then execFile('tmux') fails with ENOENT because
-      // PATH has been reshaped by pnpm. Prefer the stable absolute Homebrew
-      // paths; execFile will surface a clear error if they truly do not exist.
-      if (
-        candidate === process.env.TMUX_BIN ||
-        candidate === '/opt/homebrew/bin/tmux' ||
-        candidate === '/usr/local/bin/tmux' ||
-        existsSync(candidate)
-      ) {
-        return candidate
-      }
+      if (existsSync(candidate)) return candidate
       continue
     }
     return candidate
@@ -105,6 +98,11 @@ function startSession(
   cwd: string,
 ): Promise<{ ok: boolean; error?: string }> {
   return new Promise((resolve) => {
+    const hermesBin = resolveHermesBin()
+    const launchCommand = buildHermesTmuxLaunchCommand({
+      profilePath,
+      hermesBin,
+    })
     const child = execFile(
       tmuxBin,
       [
@@ -114,7 +112,7 @@ function startSession(
         sessionName,
         '-c',
         cwd,
-        `HERMES_HOME='${profilePath.replace(/'/g, `'\\''`)}' HERMES_CLI_BIN='${resolveHermesBin().replace(/'/g, `'\\''`)}' exec '${resolveHermesBin().replace(/'/g, `'\\''`)}' chat --tui`,
+        launchCommand,
       ],
       { timeout: 8_000 },
       (error, _stdout, stderr) => {

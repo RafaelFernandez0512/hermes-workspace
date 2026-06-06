@@ -3,7 +3,8 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import * as YAML from 'yaml'
 import { z } from 'zod'
-import { getLocalBinDir, getProfilesDir } from './claude-paths'
+import { getHermesRoot, getLocalBinDir, getProfilesDir } from './claude-paths'
+import { getActiveProfileName } from './profiles-browser'
 import { isSwarmWorkerId, rosterByWorkerId } from './swarm-roster'
 
 export const SwarmWorkerStateSchema = z.enum([
@@ -450,15 +451,68 @@ export function patchSwarmRuntimeFile(
   }
 }
 
-export function listSwarmWorkerIds(options?: { swarmOnly?: boolean }): Array<string> {
+function normalizeScopedWorkerList(value: unknown): Array<string> | null {
+  if (!Array.isArray(value)) return null
+  const seen = new Set<string>()
+  const ids: Array<string> = []
+  for (const entry of value) {
+    const workerId =
+      typeof entry === 'string'
+        ? entry.trim()
+        : entry && typeof entry === 'object' && !Array.isArray(entry)
+          ? readString((entry as Record<string, unknown>).id)
+          : null
+    if (!workerId || !isSwarmWorkerId(workerId) || seen.has(workerId)) continue
+    seen.add(workerId)
+    ids.push(workerId)
+  }
+  return ids
+}
+
+export function readActiveSwarmWorkerScope(): { profile: string; workerIds: Array<string> } | null {
+  const activeProfile = getActiveProfileName().trim() || 'default'
+  const configPath =
+    activeProfile === 'default'
+      ? path.join(getHermesRoot(), 'config.yaml')
+      : path.join(getProfilesDir(), activeProfile, 'config.yaml')
+  if (!fs.existsSync(configPath)) return null
+
+  try {
+    const parsed = YAML.parse(fs.readFileSync(configPath, 'utf8')) as unknown
+    const root = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null
+    const swarm = root?.swarm
+    if (!swarm || typeof swarm !== 'object' || Array.isArray(swarm)) return null
+    const swarmConfig = swarm as Record<string, unknown>
+    const workerIds =
+      normalizeScopedWorkerList(swarmConfig.workers) ??
+      normalizeScopedWorkerList(swarmConfig.workerIds) ??
+      normalizeScopedWorkerList(swarmConfig.members)
+    if (workerIds === null) return null
+    return {
+      profile: activeProfile,
+      workerIds: [...new Set([activeProfile, ...workerIds])],
+    }
+  } catch {
+    return null
+  }
+}
+
+export function listSwarmWorkerIds(options?: { swarmOnly?: boolean; includeAllProfiles?: boolean }): Array<string> {
   const profilesDir = getProfilesDir()
-  if (!fs.existsSync(profilesDir)) return []
-  const entries = fs.readdirSync(profilesDir, { withFileTypes: true })
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .filter((name) => (options?.swarmOnly ?? false ? isSwarmWorkerId(name) : true))
-    .sort()
+  const existing = fs.existsSync(profilesDir)
+    ? fs.readdirSync(profilesDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+    : []
+
+  const scoped = options?.includeAllProfiles ? null : readActiveSwarmWorkerScope()
+  const base = scoped
+    ? scoped.workerIds.filter((workerId) => existing.includes(workerId) || isSwarmWorkerId(workerId))
+    : existing.sort()
+
+  return base.filter((name) => (options?.swarmOnly ?? false ? isSwarmWorkerId(name) : true))
 }
 
 export function getSwarmProfilePath(workerId: string): string {

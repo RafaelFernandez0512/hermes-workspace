@@ -6,7 +6,7 @@ import { searchExternalMemoryCandidates } from '../../../server/external-memory-
 export const Route = createFileRoute('/api/external-memory/search')({
   server: {
     handlers: {
-      GET: ({ request }) => {
+      GET: async ({ request }) => {
         if (!isAuthenticated(request)) {
           return json({ error: 'Unauthorized' }, { status: 401 })
         }
@@ -14,7 +14,7 @@ export const Route = createFileRoute('/api/external-memory/search')({
         try {
           const url = new URL(request.url)
           return json(
-            searchExternalMemoryCandidates({
+            await searchExternalMemoryCandidates({
               provider: url.searchParams.get('provider') || undefined,
               query: url.searchParams.get('q') || '',
               limit: url.searchParams.get('limit') || undefined,

@@ -22,6 +22,8 @@ export type LocalMessage = {
   toolCalls?: unknown
   toolCallId?: string
   toolName?: string
+  details?: Record<string, unknown>
+  model?: string
 }
 
 type StoreData = {

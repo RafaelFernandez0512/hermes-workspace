@@ -1,10 +1,13 @@
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
+import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 let tempRoot = ''
+let hindsightServer: http.Server | null = null
+let hindsightBaseUrl = ''
 
 function makeProviderConfig() {
   fs.writeFileSync(
@@ -44,13 +47,134 @@ con.close()
   ])
 }
 
+async function startHindsightServer() {
+  const documents = new Map<string, any>([
+    [
+      'doc-1',
+      {
+        id: 'doc-1',
+        bank_id: 'hermes',
+        original_text: 'Alpha note from Hindsight',
+        content_hash: 'hash-1',
+        created_at: '2026-06-05T12:00:00Z',
+        updated_at: '2026-06-05T12:05:00Z',
+        memory_unit_count: 2,
+        text_length: 25,
+        tags: ['alpha'],
+        document_metadata: { source: 'test' },
+        retain_params: { context: 'unit test' },
+        nodes_by_fact_type: { world: 1, observation: 1 },
+      },
+    ],
+    [
+      'doc-2',
+      {
+        id: 'doc-2',
+        bank_id: 'hermes',
+        original_text: 'Beta memory from Hindsight',
+        content_hash: 'hash-2',
+        created_at: '2026-06-05T13:00:00Z',
+        updated_at: '2026-06-05T13:05:00Z',
+        memory_unit_count: 1,
+        text_length: 26,
+        tags: ['beta'],
+        document_metadata: { source: 'test' },
+        retain_params: { context: 'unit test' },
+        nodes_by_fact_type: { experience: 1 },
+      },
+    ],
+  ])
+
+  hindsightServer = http.createServer((req, res) => {
+    const url = new URL(req.url || '/', 'http://127.0.0.1')
+    if (url.pathname === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ status: 'healthy' }))
+      return
+    }
+    if (
+      req.method === 'GET' &&
+      url.pathname === '/v1/default/banks/hermes/documents'
+    ) {
+      const items = Array.from(documents.values()).map((document) => ({
+        id: document.id,
+        bank_id: document.bank_id,
+        content_hash: document.content_hash,
+        created_at: document.created_at,
+        updated_at: document.updated_at,
+        text_length: document.text_length,
+        memory_unit_count: document.memory_unit_count,
+        tags: document.tags,
+        document_metadata: document.document_metadata,
+        retain_params: document.retain_params,
+      }))
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          items,
+          total: items.length,
+          limit: Number(url.searchParams.get('limit') || items.length),
+          offset: Number(url.searchParams.get('offset') || 0),
+        }),
+      )
+      return
+    }
+    const match = url.pathname.match(
+      /^\/v1\/default\/banks\/hermes\/documents\/([^/]+)$/,
+    )
+    if (match && req.method === 'GET') {
+      const document = documents.get(match[1])
+      if (!document) {
+        res.writeHead(404).end()
+        return
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(document))
+      return
+    }
+    if (match && req.method === 'DELETE') {
+      documents.delete(match[1])
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true }))
+      return
+    }
+    res.writeHead(404).end()
+  })
+
+  await new Promise<void>((resolve) => {
+    hindsightServer!.listen(0, '127.0.0.1', () => resolve())
+  })
+  const address = hindsightServer.address()
+  if (!address || typeof address === 'string') throw new Error('No address')
+  hindsightBaseUrl = `http://127.0.0.1:${address.port}`
+}
+
+function makeHindsightConfig() {
+  fs.mkdirSync(path.join(tempRoot, 'hindsight'), { recursive: true })
+  fs.writeFileSync(
+    path.join(tempRoot, 'hindsight', 'config.json'),
+    JSON.stringify({
+      mode: 'local_external',
+      api_url: hindsightBaseUrl,
+      bank_id: 'hermes',
+    }),
+  )
+}
+
 beforeEach(() => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-external-memory-'))
   process.env.HERMES_HOME = tempRoot
 })
 
-afterEach(() => {
+afterEach(async () => {
   delete process.env.HERMES_HOME
+  if (hindsightServer) {
+    await new Promise<void>((resolve, reject) => {
+      hindsightServer?.close((error) => (error ? reject(error) : resolve()))
+    })
+  }
+  hindsightServer = null
+  hindsightBaseUrl = ''
   fs.rmSync(tempRoot, { recursive: true, force: true })
 })
 
@@ -77,7 +201,7 @@ describe('external-memory-browser', () => {
     seedCandidateDb()
     const mod = await import('./external-memory-browser')
 
-    const result = mod.listExternalMemoryCandidates({
+    const result = await mod.listExternalMemoryCandidates({
       provider: 'custom_provider',
       state: 'candidate',
     })
@@ -103,7 +227,7 @@ describe('external-memory-browser', () => {
     seedCandidateDb()
     const mod = await import('./external-memory-browser')
 
-    const result = mod.listExternalMemoryCandidates({
+    const result = await mod.listExternalMemoryCandidates({
       provider: 'custom_provider',
       state: 'all',
     })
@@ -121,7 +245,7 @@ describe('external-memory-browser', () => {
     seedCandidateDb()
     const mod = await import('./external-memory-browser')
 
-    const result = mod.searchExternalMemoryCandidates({
+    const result = await mod.searchExternalMemoryCandidates({
       provider: 'custom_provider',
       query: 'strategic',
     })
@@ -151,6 +275,57 @@ describe('external-memory-browser', () => {
     expect(result.candidate.metadata.edited_at).toEqual(expect.any(Number))
   })
 
+  it('auto-discovers native Hindsight providers from HERMES_HOME', async () => {
+    await startHindsightServer()
+    makeHindsightConfig()
+    const mod = await import('./external-memory-browser')
+
+    const result = mod.listExternalMemoryProviders()
+
+    expect(result.active).toBe('hindsight')
+    expect(result.providers[0]).toMatchObject({
+      id: 'hindsight',
+      label: 'Hindsight',
+      kind: 'hindsight',
+      bankId: 'hermes',
+      available: true,
+    })
+  })
+
+  it('lists, searches, and deletes Hindsight documents', async () => {
+    await startHindsightServer()
+    makeHindsightConfig()
+    const mod = await import('./external-memory-browser')
+
+    const listed = await mod.listExternalMemoryCandidates({
+      provider: 'hindsight',
+    })
+    const searched = await mod.searchExternalMemoryCandidates({
+      provider: 'hindsight',
+      query: 'beta',
+    })
+    const deleted = await mod.deleteExternalMemoryCandidate({
+      provider: 'hindsight',
+      id: 'doc-1',
+    })
+    const afterDelete = await mod.listExternalMemoryCandidates({
+      provider: 'hindsight',
+    })
+
+    expect(listed.total).toBe(2)
+    expect(listed.candidates[0]).toMatchObject({
+      provider: 'hindsight',
+      state: 'document',
+    })
+    expect(searched.results[0]).toMatchObject({ id: 'doc-2' })
+    expect(deleted).toEqual({
+      ok: true,
+      provider: 'hindsight',
+      deleted: 'doc-1',
+    })
+    expect(afterDelete.total).toBe(1)
+  })
+
   it('approves, rejects, and deletes candidates from the review queue', async () => {
     makeProviderConfig()
     seedCandidateDb()
@@ -165,7 +340,7 @@ describe('external-memory-browser', () => {
       id: 'mem-2',
       reason: 'not durable',
     })
-    const deleted = mod.deleteExternalMemoryCandidate({
+    const deleted = await mod.deleteExternalMemoryCandidate({
       provider: 'custom_provider',
       id: 'mem-3',
     })
@@ -180,10 +355,12 @@ describe('external-memory-browser', () => {
       deleted: 'mem-3',
     })
     expect(
-      mod.listExternalMemoryCandidates({
-        provider: 'custom_provider',
-        state: 'all',
-      }).total,
+      (
+        await mod.listExternalMemoryCandidates({
+          provider: 'custom_provider',
+          state: 'all',
+        })
+      ).total,
     ).toBe(2)
   })
 })

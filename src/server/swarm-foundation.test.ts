@@ -5,12 +5,54 @@ import {
   classifySwarmPluginBoundary,
   deriveSwarmBoundary,
   getSwarmWrapperPath,
+  listSwarmWorkerIds,
   normalizeSwarmRuntime,
   parseSwarmPluginManifest,
+  readActiveSwarmWorkerScope,
 } from './swarm-foundation'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+
+describe('active swarm worker scope', () => {
+  it('filters visible swarm workers from the active profile config', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-scope-'))
+    const previousHermesHome = process.env.HERMES_HOME
+    const previousClaudeHome = process.env.CLAUDE_HOME
+
+    try {
+      fs.mkdirSync(path.join(tempRoot, 'profiles', 'winterfell'), { recursive: true })
+      fs.mkdirSync(path.join(tempRoot, 'profiles', 'system-operator'), { recursive: true })
+      fs.mkdirSync(path.join(tempRoot, 'profiles', 'infrastructure-agent'), { recursive: true })
+      fs.mkdirSync(path.join(tempRoot, 'profiles', 'reviewer'), { recursive: true })
+      fs.writeFileSync(path.join(tempRoot, 'active_profile'), 'winterfell\n', 'utf8')
+      fs.writeFileSync(
+        path.join(tempRoot, 'profiles', 'winterfell', 'config.yaml'),
+        ['swarm:', '  workers:', '    - system-operator', '    - infrastructure-agent'].join('\n'),
+        'utf8',
+      )
+      process.env.HERMES_HOME = tempRoot
+      delete process.env.CLAUDE_HOME
+
+      expect(readActiveSwarmWorkerScope()).toEqual({
+        profile: 'winterfell',
+        workerIds: ['winterfell', 'system-operator', 'infrastructure-agent'],
+      })
+      expect(listSwarmWorkerIds({ swarmOnly: true })).toEqual([
+        'winterfell',
+        'system-operator',
+        'infrastructure-agent',
+      ])
+      expect(listSwarmWorkerIds({ includeAllProfiles: true, swarmOnly: true })).toContain('reviewer')
+    } finally {
+      if (previousHermesHome === undefined) delete process.env.HERMES_HOME
+      else process.env.HERMES_HOME = previousHermesHome
+      if (previousClaudeHome === undefined) delete process.env.CLAUDE_HOME
+      else process.env.CLAUDE_HOME = previousClaudeHome
+      fs.rmSync(tempRoot, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('normalizeSwarmRuntime', () => {
   it('resolves semantic wrapper aliases from the roster', () => {

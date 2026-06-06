@@ -55,6 +55,7 @@ import { Route as ApiSwarmReportsRouteImport } from './routes/api/swarm-reports'
 import { Route as ApiSwarmProjectRouteImport } from './routes/api/swarm-project'
 import { Route as ApiSwarmOrchestratorLoopRouteImport } from './routes/api/swarm-orchestrator-loop'
 import { Route as ApiSwarmMissionsRouteImport } from './routes/api/swarm-missions'
+import { Route as ApiSwarmMissionEventsRouteImport } from './routes/api/swarm-mission-events'
 import { Route as ApiSwarmMemoryRouteImport } from './routes/api/swarm-memory'
 import { Route as ApiSwarmLifecycleRouteImport } from './routes/api/swarm-lifecycle'
 import { Route as ApiSwarmKanbanRouteImport } from './routes/api/swarm-kanban'
@@ -65,6 +66,7 @@ import { Route as ApiSwarmDirectChatRouteImport } from './routes/api/swarm-direc
 import { Route as ApiSwarmDecomposeRouteImport } from './routes/api/swarm-decompose'
 import { Route as ApiSwarmCheckpointRouteImport } from './routes/api/swarm-checkpoint'
 import { Route as ApiSwarmChatRouteImport } from './routes/api/swarm-chat'
+import { Route as ApiSwarmAssignmentResponseRouteImport } from './routes/api/swarm-assignment-response'
 import { Route as ApiStartClaudeRouteImport } from './routes/api/start-claude'
 import { Route as ApiStartAgentRouteImport } from './routes/api/start-agent'
 import { Route as ApiSkillsRouteImport } from './routes/api/skills'
@@ -400,6 +402,11 @@ const ApiSwarmMissionsRoute = ApiSwarmMissionsRouteImport.update({
   path: '/api/swarm-missions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSwarmMissionEventsRoute = ApiSwarmMissionEventsRouteImport.update({
+  id: '/api/swarm-mission-events',
+  path: '/api/swarm-mission-events',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSwarmMemoryRoute = ApiSwarmMemoryRouteImport.update({
   id: '/api/swarm-memory',
   path: '/api/swarm-memory',
@@ -450,6 +457,12 @@ const ApiSwarmChatRoute = ApiSwarmChatRouteImport.update({
   path: '/api/swarm-chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSwarmAssignmentResponseRoute =
+  ApiSwarmAssignmentResponseRouteImport.update({
+    id: '/api/swarm-assignment-response',
+    path: '/api/swarm-assignment-response',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiStartClaudeRoute = ApiStartClaudeRouteImport.update({
   id: '/api/start-claude',
   path: '/api/start-claude',
@@ -1045,6 +1058,7 @@ export interface FileRoutesByFullPath {
   '/api/skills': typeof ApiSkillsRouteWithChildren
   '/api/start-agent': typeof ApiStartAgentRoute
   '/api/start-claude': typeof ApiStartClaudeRoute
+  '/api/swarm-assignment-response': typeof ApiSwarmAssignmentResponseRoute
   '/api/swarm-chat': typeof ApiSwarmChatRoute
   '/api/swarm-checkpoint': typeof ApiSwarmCheckpointRoute
   '/api/swarm-decompose': typeof ApiSwarmDecomposeRoute
@@ -1055,6 +1069,7 @@ export interface FileRoutesByFullPath {
   '/api/swarm-kanban': typeof ApiSwarmKanbanRoute
   '/api/swarm-lifecycle': typeof ApiSwarmLifecycleRoute
   '/api/swarm-memory': typeof ApiSwarmMemoryRouteWithChildren
+  '/api/swarm-mission-events': typeof ApiSwarmMissionEventsRoute
   '/api/swarm-missions': typeof ApiSwarmMissionsRoute
   '/api/swarm-orchestrator-loop': typeof ApiSwarmOrchestratorLoopRoute
   '/api/swarm-project': typeof ApiSwarmProjectRoute
@@ -1205,6 +1220,7 @@ export interface FileRoutesByTo {
   '/api/skills': typeof ApiSkillsRouteWithChildren
   '/api/start-agent': typeof ApiStartAgentRoute
   '/api/start-claude': typeof ApiStartClaudeRoute
+  '/api/swarm-assignment-response': typeof ApiSwarmAssignmentResponseRoute
   '/api/swarm-chat': typeof ApiSwarmChatRoute
   '/api/swarm-checkpoint': typeof ApiSwarmCheckpointRoute
   '/api/swarm-decompose': typeof ApiSwarmDecomposeRoute
@@ -1215,6 +1231,7 @@ export interface FileRoutesByTo {
   '/api/swarm-kanban': typeof ApiSwarmKanbanRoute
   '/api/swarm-lifecycle': typeof ApiSwarmLifecycleRoute
   '/api/swarm-memory': typeof ApiSwarmMemoryRouteWithChildren
+  '/api/swarm-mission-events': typeof ApiSwarmMissionEventsRoute
   '/api/swarm-missions': typeof ApiSwarmMissionsRoute
   '/api/swarm-orchestrator-loop': typeof ApiSwarmOrchestratorLoopRoute
   '/api/swarm-project': typeof ApiSwarmProjectRoute
@@ -1367,6 +1384,7 @@ export interface FileRoutesById {
   '/api/skills': typeof ApiSkillsRouteWithChildren
   '/api/start-agent': typeof ApiStartAgentRoute
   '/api/start-claude': typeof ApiStartClaudeRoute
+  '/api/swarm-assignment-response': typeof ApiSwarmAssignmentResponseRoute
   '/api/swarm-chat': typeof ApiSwarmChatRoute
   '/api/swarm-checkpoint': typeof ApiSwarmCheckpointRoute
   '/api/swarm-decompose': typeof ApiSwarmDecomposeRoute
@@ -1377,6 +1395,7 @@ export interface FileRoutesById {
   '/api/swarm-kanban': typeof ApiSwarmKanbanRoute
   '/api/swarm-lifecycle': typeof ApiSwarmLifecycleRoute
   '/api/swarm-memory': typeof ApiSwarmMemoryRouteWithChildren
+  '/api/swarm-mission-events': typeof ApiSwarmMissionEventsRoute
   '/api/swarm-missions': typeof ApiSwarmMissionsRoute
   '/api/swarm-orchestrator-loop': typeof ApiSwarmOrchestratorLoopRoute
   '/api/swarm-project': typeof ApiSwarmProjectRoute
@@ -1530,6 +1549,7 @@ export interface FileRouteTypes {
     | '/api/skills'
     | '/api/start-agent'
     | '/api/start-claude'
+    | '/api/swarm-assignment-response'
     | '/api/swarm-chat'
     | '/api/swarm-checkpoint'
     | '/api/swarm-decompose'
@@ -1540,6 +1560,7 @@ export interface FileRouteTypes {
     | '/api/swarm-kanban'
     | '/api/swarm-lifecycle'
     | '/api/swarm-memory'
+    | '/api/swarm-mission-events'
     | '/api/swarm-missions'
     | '/api/swarm-orchestrator-loop'
     | '/api/swarm-project'
@@ -1690,6 +1711,7 @@ export interface FileRouteTypes {
     | '/api/skills'
     | '/api/start-agent'
     | '/api/start-claude'
+    | '/api/swarm-assignment-response'
     | '/api/swarm-chat'
     | '/api/swarm-checkpoint'
     | '/api/swarm-decompose'
@@ -1700,6 +1722,7 @@ export interface FileRouteTypes {
     | '/api/swarm-kanban'
     | '/api/swarm-lifecycle'
     | '/api/swarm-memory'
+    | '/api/swarm-mission-events'
     | '/api/swarm-missions'
     | '/api/swarm-orchestrator-loop'
     | '/api/swarm-project'
@@ -1851,6 +1874,7 @@ export interface FileRouteTypes {
     | '/api/skills'
     | '/api/start-agent'
     | '/api/start-claude'
+    | '/api/swarm-assignment-response'
     | '/api/swarm-chat'
     | '/api/swarm-checkpoint'
     | '/api/swarm-decompose'
@@ -1861,6 +1885,7 @@ export interface FileRouteTypes {
     | '/api/swarm-kanban'
     | '/api/swarm-lifecycle'
     | '/api/swarm-memory'
+    | '/api/swarm-mission-events'
     | '/api/swarm-missions'
     | '/api/swarm-orchestrator-loop'
     | '/api/swarm-project'
@@ -2013,6 +2038,7 @@ export interface RootRouteChildren {
   ApiSkillsRoute: typeof ApiSkillsRouteWithChildren
   ApiStartAgentRoute: typeof ApiStartAgentRoute
   ApiStartClaudeRoute: typeof ApiStartClaudeRoute
+  ApiSwarmAssignmentResponseRoute: typeof ApiSwarmAssignmentResponseRoute
   ApiSwarmChatRoute: typeof ApiSwarmChatRoute
   ApiSwarmCheckpointRoute: typeof ApiSwarmCheckpointRoute
   ApiSwarmDecomposeRoute: typeof ApiSwarmDecomposeRoute
@@ -2023,6 +2049,7 @@ export interface RootRouteChildren {
   ApiSwarmKanbanRoute: typeof ApiSwarmKanbanRoute
   ApiSwarmLifecycleRoute: typeof ApiSwarmLifecycleRoute
   ApiSwarmMemoryRoute: typeof ApiSwarmMemoryRouteWithChildren
+  ApiSwarmMissionEventsRoute: typeof ApiSwarmMissionEventsRoute
   ApiSwarmMissionsRoute: typeof ApiSwarmMissionsRoute
   ApiSwarmOrchestratorLoopRoute: typeof ApiSwarmOrchestratorLoopRoute
   ApiSwarmProjectRoute: typeof ApiSwarmProjectRoute
@@ -2397,6 +2424,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSwarmMissionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/swarm-mission-events': {
+      id: '/api/swarm-mission-events'
+      path: '/api/swarm-mission-events'
+      fullPath: '/api/swarm-mission-events'
+      preLoaderRoute: typeof ApiSwarmMissionEventsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/swarm-memory': {
       id: '/api/swarm-memory'
       path: '/api/swarm-memory'
@@ -2465,6 +2499,13 @@ declare module '@tanstack/react-router' {
       path: '/api/swarm-chat'
       fullPath: '/api/swarm-chat'
       preLoaderRoute: typeof ApiSwarmChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/swarm-assignment-response': {
+      id: '/api/swarm-assignment-response'
+      path: '/api/swarm-assignment-response'
+      fullPath: '/api/swarm-assignment-response'
+      preLoaderRoute: typeof ApiSwarmAssignmentResponseRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/start-claude': {
@@ -3473,6 +3514,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSkillsRoute: ApiSkillsRouteWithChildren,
   ApiStartAgentRoute: ApiStartAgentRoute,
   ApiStartClaudeRoute: ApiStartClaudeRoute,
+  ApiSwarmAssignmentResponseRoute: ApiSwarmAssignmentResponseRoute,
   ApiSwarmChatRoute: ApiSwarmChatRoute,
   ApiSwarmCheckpointRoute: ApiSwarmCheckpointRoute,
   ApiSwarmDecomposeRoute: ApiSwarmDecomposeRoute,
@@ -3483,6 +3525,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSwarmKanbanRoute: ApiSwarmKanbanRoute,
   ApiSwarmLifecycleRoute: ApiSwarmLifecycleRoute,
   ApiSwarmMemoryRoute: ApiSwarmMemoryRouteWithChildren,
+  ApiSwarmMissionEventsRoute: ApiSwarmMissionEventsRoute,
   ApiSwarmMissionsRoute: ApiSwarmMissionsRoute,
   ApiSwarmOrchestratorLoopRoute: ApiSwarmOrchestratorLoopRoute,
   ApiSwarmProjectRoute: ApiSwarmProjectRoute,

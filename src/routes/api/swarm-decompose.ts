@@ -25,15 +25,18 @@ type RouteAssignment = {
   workerId: string
   task: string
   rationale: string
+  dependsOn?: Array<string>
+  reviewRequired?: boolean
 }
 
-const SYSTEM = `You are an orchestrator that decomposes a single high-level user prompt into focused sub-tasks routed to the most appropriate worker agents in a parallel Claude swarm.
+const SYSTEM = `You are an orchestrator that decomposes a single high-level user prompt into focused sub-tasks routed to the most appropriate worker agents in a Claude swarm.
 
 Rules:
-- Output ONLY valid minified JSON matching this shape: {"assignments":[{"workerId":"swarm1","task":"...","rationale":"..."}],"unassigned":["...optional reasons"]}
+- Output ONLY valid minified JSON matching this shape: {"assignments":[{"workerId":"swarm1","task":"...","rationale":"...","dependsOn":["optional-prior-worker-id"],"reviewRequired":false}],"unassigned":["...optional reasons"]}
 - Use only the worker IDs that exist in the provided roster.
 - Each task must be a complete, self-contained instruction the worker can execute without additional context.
 - Prefer workers whose role, specialty, mission, skills, and capabilities match the task.
+- If a task has natural ordering (requirements → analysis → implementation → validation → docs), include dependsOn entries using prior worker IDs.
 - Assign implementation tasks to builder/UI/backend lanes, research to research lanes, review/quality gates to reviewer lanes, PR/issue tasks to PR lanes, and ops/runtime tasks to ops/backend lanes.
 - Skip workers that don't fit. Do not pad assignments.
 - Never invent worker IDs.
@@ -111,9 +114,13 @@ async function callOrchestrator(prompt: string, workers: WorkerHint[], model: st
     const workerId = typeof item.workerId === 'string' ? item.workerId.trim() : ''
     const task = typeof item.task === 'string' ? item.task.trim() : ''
     const rationale = typeof item.rationale === 'string' ? item.rationale.trim() : ''
+    const dependsOn = Array.isArray(item.dependsOn)
+      ? item.dependsOn.filter((value): value is string => typeof value === 'string' && validIds.has(value.trim())).map((value) => value.trim())
+      : undefined
+    const reviewRequired = typeof item.reviewRequired === 'boolean' ? item.reviewRequired : undefined
     if (!workerId || !task) continue
     if (!validIds.has(workerId)) continue
-    assignments.push({ workerId, task, rationale })
+    assignments.push({ workerId, task, rationale, dependsOn, reviewRequired })
   }
   const unassignedRaw = Array.isArray(obj.unassigned) ? obj.unassigned : []
   const unassigned: string[] = []
@@ -147,7 +154,48 @@ function scoreWorker(prompt: string, worker: WorkerHint): number {
   return score
 }
 
+function invoiceUploaderAssignments(prompt: string, workers: WorkerHint[]): { assignments: RouteAssignment[]; unassigned: string[] } | null {
+  const lower = prompt.toLowerCase()
+  const looksLikeInvoiceUploader = /factura|invoice|orden(?:es)? de compra|purchase order|confirmar/i.test(lower)
+  if (!looksLikeInvoiceUploader) return null
+
+  const byId = new Map(workers.map((worker) => [worker.id, worker]))
+  // The Route Mission UI itself is the orchestrator. Do not dispatch the
+  // high-level InvoiceUploader profile as a worker assignment: it is prone to
+  // doing work itself and timing out instead of simply sequencing the squad.
+  // Route the ordered worker chain directly.
+  const chain = [
+    'invoiceuploader-spec',
+    'invoiceuploader-tech',
+    'invoiceuploader-coder',
+    'invoiceuploader-validator',
+    'invoiceuploader-writer',
+  ].filter((id) => byId.has(id))
+  if (chain.length < 3) return null
+
+  const taskById: Record<string, string> = {
+    InvoiceUploader: `Orquesta esta misión de InvoiceUploader y conserva el orden seguro de trabajo. Primero confirma alcance y dependencias; después espera/spec, análisis, implementación, validación y documentación. Prompt original: ${prompt}`,
+    'invoiceuploader-spec': `Convierte el reporte en especificación y criterios de aceptación: impedir múltiples facturas activas por orden de compra; si ya existe una factura, mostrar modal de confirmación para reemplazarla; al aceptar borrar/desactivar la anterior y agregar la nueva; permitir editar/cambiar confirmación después de subir la factura. Prompt original: ${prompt}`,
+    'invoiceuploader-tech': `Analiza causa raíz e impacto técnico en React, Supabase/PostgreSQL, .NET/jobs y permisos para los dos errores. No implementes; entrega componentes afectados, riesgos, contrato de datos y plan mínimo seguro. Prompt original: ${prompt}`,
+    'invoiceuploader-coder': `Implementa el cambio mínimo y reversible según la especificación y análisis: modal de confirmación de reemplazo cuando la orden ya tiene factura; eliminación/desactivación segura de factura anterior antes de guardar la nueva; permitir editar el estado de confirmación después de subir. Añade/ajusta pruebas si existen. Prompt original: ${prompt}`,
+    'invoiceuploader-validator': `Valida con evidencia concreta después de la implementación: build/smoke React + Vite, flujo de reemplazo con modal, cancelación sin cambios, aceptación reemplazando factura, y edición/cambio de confirmación después de subir. Si falla, reporta exactamente para que coder corrija. Prompt original: ${prompt}`,
+    'invoiceuploader-writer': `Documenta decisiones, archivos cambiados, validación, riesgos y rollback del arreglo, sin secretos ni datos sensibles. Prompt original: ${prompt}`,
+  }
+
+  const assignments = chain.map((workerId, index) => ({
+    workerId,
+    task: taskById[workerId] ?? `Handle your InvoiceUploader lane for this mission. Prompt original: ${prompt}`,
+    rationale: index === 0 ? 'Orquestador del workspace InvoiceUploader.' : `Paso ${index} del flujo secuencial InvoiceUploader.`,
+    dependsOn: index === 0 ? [] : [chain[index - 1]],
+    reviewRequired: workerId === 'invoiceuploader-coder',
+  }))
+  return { assignments, unassigned: [] }
+}
+
 function heuristicAssignments(prompt: string, workers: WorkerHint[]): { assignments: RouteAssignment[]; unassigned: string[] } {
+  const invoicePlan = invoiceUploaderAssignments(prompt, workers)
+  if (invoicePlan) return invoicePlan
+
   const ranked = [...workers]
     .map((worker) => ({ worker, score: scoreWorker(prompt, worker) }))
     .sort((a, b) => b.score - a.score || a.worker.id.localeCompare(b.worker.id))
@@ -200,6 +248,16 @@ export const Route = createFileRoute('/api/swarm-decompose')({
         if (workers.length === 0) return json({ error: 'workers[] required' }, { status: 400 })
 
         const requestedModel = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : (process.env.CLAUDE_DEFAULT_MODEL ?? 'claude-opus-4-7')
+        const deterministicInvoicePlan = invoiceUploaderAssignments(prompt, workers)
+        if (deterministicInvoicePlan) {
+          return json({
+            ok: true,
+            deterministic: true,
+            decomposedAt: Date.now(),
+            model: requestedModel,
+            ...deterministicInvoicePlan,
+          })
+        }
 
         try {
           const result = await callOrchestrator(prompt, workers, requestedModel)

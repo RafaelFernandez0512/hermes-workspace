@@ -166,6 +166,23 @@ describe('swarm-missions', () => {
     expect(blocked?.mission.events.at(-1)?.type).toBe('blocked')
   })
 
+  it('marks stale dispatches when no heartbeat is observed', async () => {
+    const mod = await loadModule()
+    const mission = mod.createOrUpdateMission({
+      missionId: 'mission-stale-dispatch',
+      title: 'Stale dispatch test',
+      assignments: [{ workerId: 'builder', task: 'Probe stale dispatch', reviewRequired: false }],
+    })
+    mod.markMissionAssignmentDispatched({ missionId: mission.id, workerId: 'builder', task: 'Probe stale dispatch' })
+
+    const reconciled = mod.reconcileSwarmMissions({ staleMs: 1, heartbeatMs: 1 })
+    const refreshed = mod.getSwarmMission(mission.id)
+
+    expect(reconciled.staleAssignments.some((item) => item.missionId === mission.id)).toBe(true)
+    expect(refreshed?.assignments[0]?.state).toBe('stale')
+    expect(refreshed?.state).toBe('blocked')
+  })
+
   it('keeps dependent work queued until review-required assignments are reviewed', async () => {
     const mod = await loadModule()
     const mission = mod.createOrUpdateMission({

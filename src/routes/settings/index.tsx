@@ -1007,6 +1007,18 @@ type AvailableModelsResponse = {
   providers: Array<{ id: string; label: string; authenticated: boolean }>
 }
 
+const OAUTH_PROVIDER_MODEL_FALLBACKS: Record<
+  string,
+  Array<{ id: string; description: string }>
+> = {
+  'openai-codex': [
+    { id: 'gpt-5.5', description: 'OpenAI Codex' },
+    { id: 'gpt-5.4-mini', description: 'OpenAI Codex' },
+    { id: 'gpt-5.4', description: 'OpenAI Codex' },
+    { id: 'gpt-5.3-codex', description: 'OpenAI Codex' },
+  ],
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -1247,7 +1259,11 @@ function ClaudeConfigSection({
       )
       if (res.ok) {
         const result = (await res.json()) as AvailableModelsResponse
-        setAvailableModels(result.models)
+        setAvailableModels(
+          result.models.length > 0
+            ? result.models
+            : (OAUTH_PROVIDER_MODEL_FALLBACKS[provider] || []),
+        )
         if (result.providers.length > 0) setAvailableProviders(result.providers)
       }
     } catch {

@@ -31,7 +31,7 @@ export function SessionDeleteDialog({
           <AlertDialogTitle className="mb-1">Delete Session</AlertDialogTitle>
           <AlertDialogDescription className="mb-4">
             Are you sure you want to delete "{sessionTitle}"? This action cannot
-            be undone.
+            be undone. Sessions with active runs must be stopped first.
           </AlertDialogDescription>
           <div className="flex justify-end gap-2">
             <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>

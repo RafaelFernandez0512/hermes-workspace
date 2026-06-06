@@ -84,7 +84,7 @@ describe('Swarm2 surface contract', () => {
 import { __runtimeTabInternals } from './swarm2-screen'
 
 describe('Swarm2 runtime tab command resolution', () => {
-  const { commandForRuntime } = __runtimeTabInternals
+  const { commandForRuntime, isRuntimeActive } = __runtimeTabInternals
 
   it('prefers tmux attach when an attachable session exists', () => {
     const result = commandForRuntime({
@@ -207,6 +207,48 @@ describe('Swarm2 runtime tab command resolution', () => {
     )
     expect(result.kind).toBe('shell')
     expect(result.command[0]).toBe('zsh')
+  })
+
+  it('does not treat stale done output as an active runtime by itself', () => {
+    expect(
+      isRuntimeActive({
+        workerId: 'swarm4',
+        currentTask: null,
+        recentLogTail: null,
+        pid: null,
+        startedAt: null,
+        lastOutputAt: Date.now(),
+        cwd: '/tmp/work',
+        tmuxSession: null,
+        tmuxAttachable: false,
+        logPath: '/tmp/agent.log',
+        terminalKind: 'log-tail',
+        checkpointStatus: 'done',
+        state: 'idle',
+        phase: 'done',
+      }),
+    ).toBe(false)
+  })
+
+  it('still treats true in-progress runtime state as active', () => {
+    expect(
+      isRuntimeActive({
+        workerId: 'swarm4',
+        currentTask: null,
+        recentLogTail: null,
+        pid: null,
+        startedAt: null,
+        lastOutputAt: null,
+        cwd: '/tmp/work',
+        tmuxSession: null,
+        tmuxAttachable: false,
+        logPath: '/tmp/agent.log',
+        terminalKind: 'log-tail',
+        checkpointStatus: 'in_progress',
+        state: 'executing',
+        phase: 'dispatched',
+      }),
+    ).toBe(true)
   })
 })
 

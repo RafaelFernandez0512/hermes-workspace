@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import { z } from 'zod'
-import { createKanbanCard, getKanbanBackendMeta, listKanbanCards, updateKanbanCard } from '../../server/kanban-backend'
+import { createKanbanCard, getKanbanBackendMeta, getKanbanCard, listKanbanCards, updateKanbanCard } from '../../server/kanban-backend'
 
 const AcceptanceCriteriaSchema = z.preprocess(
   (value) => {
@@ -38,7 +38,13 @@ const UpdateCardSchema = CreateCardSchema.partial().extend({
 export const Route = createFileRoute('/api/swarm-kanban')({
   server: {
     handlers: {
-      GET: async () => {
+      GET: async ({ request }) => {
+        const taskId = new URL(request.url).searchParams.get('taskId')?.trim()
+        if (taskId) {
+          const card = await getKanbanCard(taskId)
+          if (!card) return json({ ok: false, error: 'Card not found' }, { status: 404 })
+          return json({ ok: true, card, backend: getKanbanBackendMeta() })
+        }
         return json({
           ok: true,
           cards: await listKanbanCards(),
@@ -58,7 +64,7 @@ export const Route = createFileRoute('/api/swarm-kanban')({
         }
         const data = parsed.data
         const card = await createKanbanCard({
-          title: data.title ?? '',
+          title: data.title,
           spec: data.spec,
           acceptanceCriteria: data.acceptanceCriteria,
           assignedWorker: data.assignedWorker,

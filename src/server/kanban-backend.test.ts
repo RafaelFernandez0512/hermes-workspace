@@ -252,6 +252,7 @@ describe('kanban-backend', () => {
               parents_json: '["t_parent"]',
               children_json: '["t_leaf"]',
               latest_run_summary: 'patched adapter',
+              latest_run_metadata: '{"changed_files":["src/a.ts"],"commands_run":["pnpm test"],"worker_session_id":"abc123"}',
             },
           ])
         }
@@ -266,7 +267,14 @@ describe('kanban-backend', () => {
       status: 'todo',
       parents: ['t_parent'],
       children: ['t_leaf'],
-      latestRun: { summary: 'patched adapter' },
+      latestRun: {
+        summary: 'patched adapter',
+        metadata: {
+          changed_files: ['src/a.ts'],
+          commands_run: ['pnpm test'],
+          worker_session_id: 'abc123',
+        },
+      },
       source: 'native-kanban',
     })
   })
@@ -325,5 +333,77 @@ describe('kanban-backend', () => {
     expect(sqliteCalls.some((call) => call.includes('task_links') && call.includes('t_parent'))).toBe(true)
     expect(sqliteCalls.some((call) => call.includes('idempotency_key') && call.includes('native-dispatch-1'))).toBe(true)
     expect(sqliteCalls.every((call) => !call.includes('swarm2-kanban.json'))).toBe(true)
+  })
+
+  it('surfaces latest run metadata from Hermes dashboard task detail', async () => {
+    vi.stubEnv('CLAUDE_KANBAN_BACKEND', 'hermes-proxy')
+    vi.doMock('./gateway-capabilities', () => ({
+      CLAUDE_DASHBOARD_URL: 'http://dashboard.local',
+      getCapabilities: () => ({
+        kanban: true,
+        dashboard: { available: true, url: 'http://dashboard.local' },
+      }),
+      fetchDashboardToken: async () => null,
+    }))
+    vi.doMock('./kanban-dashboard-proxy', () => ({
+      fetchDashboardKanbanBoard: vi.fn(),
+      fetchDashboardKanbanTask: vi.fn(),
+      fetchDashboardKanbanTaskDetail: vi.fn(async () => ({
+        task: {
+          id: 't_detail',
+          title: 'Hermes detail task',
+          body: 'Walkthrough',
+          assignee: 'swarm9',
+          status: 'done',
+          created_by: 'dashboard',
+          created_at: 1777527540,
+          started_at: 1777527600,
+          completed_at: 1777527660,
+        },
+        comments: [],
+        events: [],
+        attachments: [],
+        links: { parents: [], children: [] },
+        runs: [
+          {
+            id: 11,
+            task_id: 't_detail',
+            profile: 'invoiceuploader-spec',
+            step_key: null,
+            status: 'done',
+            claim_lock: null,
+            claim_expires: null,
+            worker_pid: null,
+            max_runtime_seconds: null,
+            last_heartbeat_at: 1777527650,
+            started_at: 1777527600,
+            ended_at: 1777527660,
+            outcome: 'completed',
+            summary: 'implemented the fix and verified the happy path',
+            metadata: {
+              changed_files: ['src/a.ts', 'src/b.ts'],
+              commands_run: ['pytest -q', 'pnpm vitest run'],
+            },
+            error: null,
+          },
+        ],
+      })),
+      createDashboardKanbanTask: vi.fn(),
+      updateDashboardKanbanTask: vi.fn(),
+    }))
+
+    const mod = await import('./kanban-backend')
+    const card = await mod.getKanbanCard('t_detail')
+
+    expect(card).toMatchObject({
+      id: 't_detail',
+      latestRun: {
+        summary: 'implemented the fix and verified the happy path',
+        metadata: {
+          changed_files: ['src/a.ts', 'src/b.ts'],
+          commands_run: ['pytest -q', 'pnpm vitest run'],
+        },
+      },
+    })
   })
 })

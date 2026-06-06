@@ -9,6 +9,13 @@ import { isAuthenticated } from '../../../server/auth-middleware'
  * filtered by provider so the chat composer / settings dialog don't
  * silently break for users on vanilla agent.
  */
+const OPENAI_CODEX_MODEL_FALLBACKS = [
+  'gpt-5.5',
+  'gpt-5.4-mini',
+  'gpt-5.4',
+  'gpt-5.3-codex',
+]
+
 async function fallbackAvailableModels(
   provider: string,
   authHeaders: Record<string, string>,
@@ -24,7 +31,7 @@ async function fallbackAvailableModels(
     const data = (await res.json()) as { data?: Array<Record<string, unknown>> }
     const list = Array.isArray(data?.data) ? data.data : []
     const wanted = provider.toLowerCase()
-    const models = list
+    let models = list
       .map((m) => {
         const id = typeof m.id === 'string' ? m.id : ''
         if (!id) return null
@@ -34,6 +41,11 @@ async function fallbackAvailableModels(
         return { id }
       })
       .filter((m): m is { id: string } => Boolean(m))
+
+    if (wanted === 'openai-codex' && models.length === 0) {
+      models = OPENAI_CODEX_MODEL_FALLBACKS.map((id) => ({ id }))
+    }
+
     return new Response(JSON.stringify({ models }), {
       status: 200,
       headers: { 'content-type': 'application/json' },

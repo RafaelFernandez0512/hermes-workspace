@@ -27,6 +27,7 @@ import {
 } from '../../server/swarm-foundation'
 import { formatSwarmWorkerLabel, resolveSwarmWorkerDisplayName, rosterByWorkerId } from '../../server/swarm-roster'
 import { readSwarmMode, writeSwarmMode } from '../../server/swarm-mode'
+import { getMissionAssignmentContext, reconcileSwarmMissions } from '../../server/swarm-missions'
 import type {SwarmArtifactMetadata, SwarmBoundary, SwarmCheckpointStatus, SwarmDispatchMetadata, SwarmLifecycleMetadata, SwarmPreviewMetadata, SwarmRuntimeSource, SwarmSessionMetadata, SwarmTaskMetadata, SwarmTerminalKind, SwarmWorkerState} from '../../server/swarm-foundation';
 
 type RuntimeEntry = {
@@ -50,6 +51,12 @@ type RuntimeEntry = {
   checkpointStatus: SwarmCheckpointStatus
   needsHuman: boolean
   blockedReason: string | null
+  assignmentState: string | null
+  assignmentBlocker: string | null
+  assignmentStaleReason: string | null
+  assignmentDependsOn: Array<string>
+  dispatchState: string | null
+  runId: string | null
   lastCheckIn: string | null
   lastSummary: string | null
   nextAction: string | null
@@ -92,6 +99,21 @@ function lastLogTail(
     return { tail: tailLines, lastSessionStartedAt: stat.mtimeMs, logPath: log }
   } catch {
     return { tail: null, lastSessionStartedAt: null, logPath: null }
+  }
+}
+
+function readRuntimeContext(profilePath: string): { missionId: string | null; assignmentId: string | null; runId: string | null } {
+  const runtimePath = join(profilePath, 'runtime.json')
+  if (!existsSync(runtimePath)) return { missionId: null, assignmentId: null, runId: null }
+  try {
+    const raw = JSON.parse(readFileSync(runtimePath, 'utf8')) as Record<string, unknown>
+    return {
+      missionId: typeof raw.currentMissionId === 'string' ? raw.currentMissionId : null,
+      assignmentId: typeof raw.currentAssignmentId === 'string' ? raw.currentAssignmentId : null,
+      runId: typeof raw.currentRunId === 'string' ? raw.currentRunId : null,
+    }
+  } catch {
+    return { missionId: null, assignmentId: null, runId: null }
   }
 }
 
@@ -141,6 +163,12 @@ async function buildEntry(
   const profilePath = join(getProfilesDir(), workerId)
   const { source, runtime } = readSwarmRuntimeFile(profilePath, workerId, {
     workspaceRoot: process.cwd(),
+  })
+  const rawContext = readRuntimeContext(profilePath)
+  const missionContext = getMissionAssignmentContext({
+    missionId: rawContext.missionId,
+    assignmentId: rawContext.assignmentId,
+    workerId,
   })
   const roster = rosterByWorkerId([workerId]).get(workerId)
   const { tail, lastSessionStartedAt, logPath } = lastLogTail(profilePath)
@@ -209,6 +237,12 @@ async function buildEntry(
     checkpointStatus: runtime.checkpointStatus,
     needsHuman: runtime.needsHuman,
     blockedReason: runtime.blockedReason,
+    assignmentState: missionContext.assignment?.state ?? null,
+    assignmentBlocker: missionContext.assignment?.blockerReason ?? null,
+    assignmentStaleReason: missionContext.assignment?.staleReason ?? null,
+    assignmentDependsOn: missionContext.assignment?.dependsOn ?? [],
+    dispatchState: missionContext.mission?.dispatchState ?? null,
+    runId: rawContext.runId ?? missionContext.mission?.runId ?? null,
     lastCheckIn: runtime.lastCheckIn,
     lastSummary: runtime.lastSummary,
     nextAction: runtime.nextAction,
@@ -251,6 +285,7 @@ export const Route = createFileRoute('/api/swarm-runtime')({
         if (!isAuthenticated(request)) {
           return json({ error: 'Unauthorized' }, { status: 401 })
         }
+        reconcileSwarmMissions()
         const ids = listWorkerIds()
         const tmuxAvailable = await tmuxIsInstalled()
         const entries = await Promise.all(ids.map((id) => buildEntry(id, tmuxAvailable)))

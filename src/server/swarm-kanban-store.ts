@@ -21,7 +21,16 @@ export type SwarmKanbanCard = {
   updatedAt: number
   parents?: string[]
   children?: string[]
-  latestRun?: { summary?: string | null; outcome?: string | null; status?: string | null } | null
+  latestRun?: {
+    summary?: string | null
+    outcome?: string | null
+    status?: string | null
+    error?: string | null
+    metadata?: Record<string, unknown> | null
+    profile?: string | null
+    startedAt?: number | null
+    endedAt?: number | null
+  } | null
   source?: string
 }
 
@@ -92,6 +101,25 @@ function optionalString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
+function normalizeLatestRun(value: unknown): SwarmKanbanCard['latestRun'] {
+  if (!value || typeof value !== 'object') return null
+  const run = value as Record<string, unknown>
+  const metadata = run.metadata && typeof run.metadata === 'object' && !Array.isArray(run.metadata)
+    ? (run.metadata as Record<string, unknown>)
+    : null
+  const latestRun = {
+    summary: typeof run.summary === 'string' ? run.summary : null,
+    outcome: typeof run.outcome === 'string' ? run.outcome : null,
+    status: typeof run.status === 'string' ? run.status : null,
+    error: typeof run.error === 'string' ? run.error : null,
+    metadata,
+    profile: optionalString(run.profile),
+    startedAt: typeof run.startedAt === 'number' ? run.startedAt : null,
+    endedAt: typeof run.endedAt === 'number' ? run.endedAt : null,
+  }
+  return latestRun
+}
+
 function normalizeCard(card: (Partial<Omit<SwarmKanbanCard, 'status'>> & { id?: string; title?: string; status?: SwarmKanbanLane | string | null })): SwarmKanbanCard {
   const now = Date.now()
   return {
@@ -107,6 +135,7 @@ function normalizeCard(card: (Partial<Omit<SwarmKanbanCard, 'status'>> & { id?: 
     createdBy: typeof card.createdBy === 'string' && card.createdBy ? card.createdBy : 'swarm2-kanban',
     createdAt: typeof card.createdAt === 'number' ? card.createdAt : now,
     updatedAt: typeof card.updatedAt === 'number' ? card.updatedAt : now,
+    latestRun: normalizeLatestRun(card.latestRun),
   }
 }
 

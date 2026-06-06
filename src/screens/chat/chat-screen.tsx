@@ -1053,14 +1053,46 @@ export function ChatScreen({
     return models.map((m: any) => m.id).filter((id: string) => id)
   }, [modelsQuery.data])
 
+  const composerSessionKey =
+    isNewChat
+      ? 'new'
+      : forcedSessionKey ||
+        resolvedSessionKey ||
+        activeCanonicalKey ||
+        activeSessionKey ||
+        undefined
+  const persistedSessionModel = useSessionModelStore((s) =>
+    s.getModel(composerSessionKey),
+  )
+  const draftSessionModel = useSessionModelStore((s) => s.getModel('new'))
+  const setPersistedSessionModel = useSessionModelStore((s) => s.setModel)
+  const clearPersistedSessionModel = useSessionModelStore((s) => s.clearModel)
+
   const gatewayModel = currentModelQuery.data || ''
-  const currentModel = _localModelOverride || gatewayModel
+  const currentModel =
+    persistedSessionModel ||
+    (composerSessionKey === 'new' ? draftSessionModel : '') ||
+    _localModelOverride ||
+    gatewayModel
 
   // Ref so sendMessage can always read latest thinkingLevel without being in deps
   const thinkingLevelRef = useRef<ThinkingLevel>(thinkingLevel)
   useEffect(() => {
     thinkingLevelRef.current = thinkingLevel
   }, [thinkingLevel])
+
+  useEffect(() => {
+    if (!composerSessionKey || composerSessionKey === 'new') return
+    if (!draftSessionModel || persistedSessionModel) return
+    setPersistedSessionModel(composerSessionKey, draftSessionModel)
+    clearPersistedSessionModel('new')
+  }, [
+    clearPersistedSessionModel,
+    composerSessionKey,
+    draftSessionModel,
+    persistedSessionModel,
+    setPersistedSessionModel,
+  ])
 
   // Auto-upgrade thinking to adaptive for Claude 4.6 when session first loads
   const thinkingInitializedRef = useRef(false)
@@ -1747,6 +1779,7 @@ export function ChatScreen({
     !forcedSessionKey &&
     !isRecentSession(activeFriendlyId) &&
     sessionsQuery.isSuccess &&
+    !sessionsQuery.isFetching &&
     sessions.length > 0 &&
     !sessions.some((session) => session.friendlyId === activeFriendlyId) &&
     !historyQuery.isFetching &&
@@ -1834,6 +1867,7 @@ export function ChatScreen({
     queryClient,
     sessionKeyForHistory,
     sessions,
+    sessionsQuery.isFetching,
     sessionsQuery.isSuccess,
     shouldRedirectToNew,
     embedded,
@@ -2839,6 +2873,7 @@ export function ChatScreen({
               emptyState={
                 <ChatEmptyState
                   compact={compact}
+                  model={currentModel}
                   onSuggestionClick={(prompt) => {
                     composerHandleRef.current?.setValue(prompt + ' ')
                   }}
@@ -2882,14 +2917,7 @@ export function ChatScreen({
               onAbort={handleAbortStreaming}
               isLoading={sending || waitingForResponse}
               disabled={sending || hideUi}
-              sessionKey={
-                isNewChat
-                  ? undefined
-                  : forcedSessionKey ||
-                    resolvedSessionKey ||
-                    activeCanonicalKey ||
-                    activeSessionKey
-              }
+              sessionKey={composerSessionKey}
               wrapperRef={composerRef}
               composerRef={composerHandleRef}
               embedded={embedded}

@@ -28,8 +28,14 @@ describe('formatStateFilterLabel', () => {
 })
 
 describe('candidateActionLabels', () => {
+  const reviewProvider = { kind: 'custom' as const, capabilities: ['review'] }
+  const hindsightProvider = {
+    kind: 'hindsight' as const,
+    capabilities: ['browse', 'search', 'delete'],
+  }
+
   it('shows edit, approve, reject, and delete actions for review candidates', () => {
-    expect(candidateActionLabels({ state: 'candidate' })).toEqual([
+    expect(candidateActionLabels(reviewProvider, { state: 'candidate' })).toEqual([
       'Edit',
       'Approve',
       'Reject',
@@ -38,14 +44,20 @@ describe('candidateActionLabels', () => {
   })
 
   it('hides redundant approve or reject actions for final states', () => {
-    expect(candidateActionLabels({ state: 'approved' })).toEqual([
+    expect(candidateActionLabels(reviewProvider, { state: 'approved' })).toEqual([
       'Edit',
       'Reject',
       'Delete',
     ])
-    expect(candidateActionLabels({ state: 'rejected' })).toEqual([
+    expect(candidateActionLabels(reviewProvider, { state: 'rejected' })).toEqual([
       'Edit',
       'Approve',
+      'Delete',
+    ])
+  })
+
+  it('shows only delete for native Hindsight documents', () => {
+    expect(candidateActionLabels(hindsightProvider, { state: 'document' })).toEqual([
       'Delete',
     ])
   })

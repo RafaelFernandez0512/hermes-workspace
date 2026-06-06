@@ -116,15 +116,35 @@ function maskSecret(value: string): string {
   return `${value.slice(0, 4)}...${value.slice(-4)}`
 }
 
+function inferProviderFromModelId(modelId: string): string {
+  const normalized = modelId.trim().toLowerCase().replace(/[\s_]+/g, '-')
+  if (!normalized) return ''
+  if (normalized.startsWith('openai-codex/')) return 'openai-codex'
+  if (
+    /^gpt-5\.5$/.test(normalized) ||
+    /^gpt-5\.4(?:-mini)?$/.test(normalized) ||
+    /^gpt-5\.3-codex(?:-spark)?$/.test(normalized)
+  ) {
+    return 'openai-codex'
+  }
+  return ''
+}
+
 function readDefaultModel(config: Record<string, unknown>): HermesConfigState['defaultModel'] {
   const flatModel = readString(config.model)
   const flatProvider = readString(config.provider)
-  if (flatModel && flatProvider) {
-    return { provider: flatProvider, model: flatModel, source: 'flat' }
+  const inferredFlatProvider = inferProviderFromModelId(flatModel)
+  if (flatModel && (flatProvider || inferredFlatProvider)) {
+    return {
+      provider: flatProvider || inferredFlatProvider,
+      model: flatModel,
+      source: 'flat',
+    }
   }
 
   const model = readRecord(config.model)
-  const nestedProvider = readString(model.provider) || flatProvider
+  const nestedProvider =
+    readString(model.provider) || flatProvider || inferProviderFromModelId(flatModel)
   const nestedModel = readString(model.default) || flatModel
   if (!nestedProvider || !nestedModel) return null
   return { provider: nestedProvider, model: nestedModel, source: 'nested' }
@@ -142,7 +162,17 @@ function authProfileToken(authProfiles: Record<string, unknown>, providerId: str
       readString(profile.accessToken)
     if (token) return token
   }
-  return ''
+
+  const providers = readRecord(authProfiles.providers)
+  const provider = readRecord(providers[providerId])
+  const tokens = readRecord(provider.tokens)
+  return (
+    readString(tokens.access_token) ||
+    readString(tokens.accessToken) ||
+    readString(provider.api_key) ||
+    readString(provider.access_token) ||
+    ''
+  )
 }
 
 function readCustomProviderEntries(config: Record<string, unknown>): Array<Record<string, unknown>> {

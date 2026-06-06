@@ -22,11 +22,15 @@ type StopRequest = {
 }
 
 const TMUX_BIN_CANDIDATES = [
+  process.env.HERMES_TMUX_BIN,
+  process.env.CLAUDE_TMUX_BIN,
+  process.env.TMUX_BIN,
   join(homedir(), '.local', 'bin', 'tmux'),
-  '/opt/homebrew/bin/tmux',
+  '/usr/bin/tmux',
   '/usr/local/bin/tmux',
+  '/opt/homebrew/bin/tmux',
   'tmux',
-]
+].filter((value): value is string => Boolean(value))
 
 function resolveTmuxBin(): string | null {
   for (const candidate of TMUX_BIN_CANDIDATES) {
@@ -72,6 +76,32 @@ function killSession(
 
 function validateWorkerId(value: string): boolean {
   return /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(value)
+}
+
+export async function sendCtrlCToSession(workerId: string): Promise<{ ok: boolean; error?: string }> {
+  const tmuxBin = resolveTmuxBin()
+  if (!tmuxBin) return { ok: false, error: 'tmux not installed' }
+  const sessionName = `swarm-${workerId}`
+  const exists = await tmuxHasSession(tmuxBin, sessionName)
+  if (!exists) return { ok: false, error: `session ${sessionName} not found` }
+  return new Promise((resolve) => {
+    execFile(tmuxBin, ['send-keys', '-t', sessionName, 'C-c'], { timeout: 5_000 }, (error, _stdout, stderr) => {
+      if (error) {
+        resolve({ ok: false, error: stderr?.toString().trim() || error.message })
+        return
+      }
+      resolve({ ok: true })
+    })
+  })
+}
+
+export async function forceKillSession(workerId: string): Promise<{ ok: boolean; error?: string }> {
+  const tmuxBin = resolveTmuxBin()
+  if (!tmuxBin) return { ok: false, error: 'tmux not installed' }
+  const sessionName = `swarm-${workerId}`
+  const exists = await tmuxHasSession(tmuxBin, sessionName)
+  if (!exists) return { ok: true }
+  return killSession(tmuxBin, sessionName)
 }
 
 export const Route = createFileRoute('/api/swarm-tmux-stop')({

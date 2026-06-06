@@ -1,7 +1,9 @@
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
 import { join, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib'
 import server from './dist/server/server.js'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -104,6 +106,51 @@ const MIME_TYPES = {
   '.webmanifest': 'application/manifest+json',
 }
 
+const COMPRESSIBLE_CONTENT_TYPES = [
+  'application/javascript',
+  'application/json',
+  'application/manifest+json',
+  'application/xml',
+  'image/svg+xml',
+  'text/css',
+  'text/html',
+  'text/plain',
+]
+const compressionCache = new Map()
+
+function getPreferredEncoding(acceptEncoding = '') {
+  const normalized = acceptEncoding.toLowerCase()
+  if (normalized.includes('br')) return 'br'
+  if (normalized.includes('gzip')) return 'gzip'
+  return null
+}
+
+function isCompressible(contentType = '') {
+  return COMPRESSIBLE_CONTENT_TYPES.some((type) =>
+    contentType.startsWith(type),
+  )
+}
+
+function getCompressedBuffer(data, filePath, fileStat, encoding) {
+  const cacheKey = `${filePath}:${fileStat.mtimeMs}:${fileStat.size}:${encoding}`
+  const cached = compressionCache.get(cacheKey)
+  if (cached) return cached
+
+  const compressed =
+    encoding === 'br'
+      ? brotliCompressSync(data, {
+          params: {
+            [zlibConstants.BROTLI_PARAM_QUALITY]: 5,
+          },
+        })
+      : gzipSync(data, {
+          level: 6,
+        })
+
+  compressionCache.set(cacheKey, compressed)
+  return compressed
+}
+
 async function tryServeStatic(req, res) {
   const url = new URL(
     req.url || '/',
@@ -146,11 +193,8 @@ async function tryServeStatic(req, res) {
 
     const ext = extname(filePath).toLowerCase()
     const contentType = MIME_TYPES[ext] || 'application/octet-stream'
-    const data = await readFile(filePath)
-
     const headers = {
       'Content-Type': contentType,
-      'Content-Length': data.length,
     }
 
     // Cache hashed assets aggressively (they have content hashes in filenames)
@@ -158,8 +202,41 @@ async function tryServeStatic(req, res) {
       headers['Cache-Control'] = 'public, max-age=31536000, immutable'
     }
 
+    let data = null
+    const shouldCompress =
+      req.method !== 'HEAD' &&
+      fileStat.size >= 1024 &&
+      isCompressible(contentType) &&
+      !req.headers.range
+
+    if (shouldCompress) {
+      const encoding = getPreferredEncoding(req.headers['accept-encoding'])
+      if (encoding) {
+        const rawData = await readFile(filePath)
+        const compressed = getCompressedBuffer(rawData, filePath, fileStat, encoding)
+
+        if (compressed.length < rawData.length) {
+          data = compressed
+          headers['Content-Encoding'] = encoding
+          headers['Vary'] = 'Accept-Encoding'
+        } else {
+          data = rawData
+        }
+      }
+    }
+
+    if (!data && req.method !== 'HEAD') {
+      data = await readFile(filePath)
+    }
+
+    headers['Content-Length'] = data ? data.length : fileStat.size
+
     res.writeHead(200, headers)
-    res.end(data)
+    if (req.method === 'HEAD') {
+      res.end()
+    } else {
+      res.end(data)
+    }
     return true
   } catch {
     return false
@@ -233,8 +310,66 @@ async function requestHandler(req, res) {
   }
 }
 
-function listenOn(bindHost) {
+function isEaddrInUse(error) {
+  return Boolean(error && typeof error === 'object' && error.code === 'EADDRINUSE')
+}
+
+function maybeReapOrphanServerEntryProcesses() {
+  const allowReap = (process.env.HERMES_REAP_ORPHAN_SERVER || '').trim().toLowerCase()
+  if (allowReap !== '1' && allowReap !== 'true' && allowReap !== 'yes') return []
+
+  try {
+    const output = execFileSync('pgrep', ['-af', 'server-entry\.js'], { encoding: 'utf8' }).trim()
+    if (!output) return []
+    const killed = []
+    for (const line of output.split('\n')) {
+      const match = line.trim().match(/^(\d+)\s+(.+)$/)
+      if (!match) continue
+      const pid = Number(match[1])
+      const cmd = match[2]
+      if (!Number.isFinite(pid) || pid === process.pid) continue
+      if (!cmd.includes('server-entry.js')) continue
+      try {
+        const cwd = execFileSync('readlink', ['-f', `/proc/${pid}/cwd`], { encoding: 'utf8' }).trim()
+        if (cwd !== process.cwd()) continue
+      } catch {
+        continue
+      }
+      try {
+        process.kill(pid, 'SIGTERM')
+        killed.push(pid)
+      } catch {
+        /* ignore */
+      }
+    }
+    return killed
+  } catch {
+    return []
+  }
+}
+
+function listenOn(bindHost, retry = false) {
   const httpServer = createServer(requestHandler)
+  httpServer.on('error', (error) => {
+    if (isEaddrInUse(error)) {
+      console.error(
+        `\n[workspace] port ${port} is already in use on ${bindHost}.\n` +
+          '  A stale node server-entry.js process may still be running.\n' +
+          '  Inspect with: pgrep -af "server-entry.js"\n' +
+          '  Or enable safe cleanup: HERMES_REAP_ORPHAN_SERVER=1\n',
+      )
+      const killed = retry ? [] : maybeReapOrphanServerEntryProcesses()
+      if (!retry && killed.length > 0) {
+        console.warn(`[workspace] requested cleanup for orphaned server-entry.js pids: ${killed.join(', ')}. Retrying bind…`)
+        setTimeout(() => listenOn(bindHost, true), 750)
+        return
+      }
+      process.exit(1)
+      return
+    }
+    console.error('[workspace] server error:', error)
+    process.exit(1)
+  })
   httpServer.listen(port, bindHost, () => {
     console.log(`Hermes Workspace running at http://${bindHost}:${port}`)
   })

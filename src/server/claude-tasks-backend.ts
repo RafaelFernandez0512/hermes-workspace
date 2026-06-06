@@ -1,10 +1,12 @@
 import {
   createKanbanCard,
-  listKanbanCards,
-  type KanbanBackendMeta,
   getKanbanBackendMeta,
+  listKanbanCards,
   updateKanbanCard,
 } from './kanban-backend'
+import { buildTaskRunRecapFromLatestRun } from './task-run-recap'
+import type { KanbanBackendMeta } from './kanban-backend'
+import type { TaskLatestRun } from './task-run-recap'
 
 export type TaskColumn = 'backlog' | 'todo' | 'in_progress' | 'review' | 'blocked' | 'done'
 export type TaskPriority = 'high' | 'medium' | 'low'
@@ -16,12 +18,13 @@ export type ClaudeTaskRecord = {
   column: TaskColumn
   priority: TaskPriority
   assignee: string | null
-  tags: string[]
+  tags: Array<string>
   due_date: string | null
   position: number
   created_by: string
   created_at: string
   updated_at: string
+  latestRun?: TaskLatestRun | null
 }
 
 type TaskFilters = {
@@ -37,7 +40,7 @@ type CreateTaskInput = {
   column?: TaskColumn
   priority?: TaskPriority
   assignee?: string | null
-  tags?: string[]
+  tags?: Array<string>
   due_date?: string | null
   created_by?: string
 }
@@ -93,6 +96,16 @@ function mapCardToTask(card: {
   createdBy: string
   createdAt: number
   updatedAt: number
+  latestRun?: {
+    summary?: string | null
+    outcome?: string | null
+    status?: string | null
+    error?: string | null
+    metadata?: Record<string, unknown> | null
+    profile?: string | null
+    startedAt?: number | null
+    endedAt?: number | null
+  } | null
 }): ClaudeTaskRecord {
   return {
     id: card.id,
@@ -107,6 +120,7 @@ function mapCardToTask(card: {
     created_by: card.createdBy,
     created_at: toIso(card.createdAt),
     updated_at: toIso(card.updatedAt),
+    latestRun: buildTaskRunRecapFromLatestRun(card.latestRun ?? null),
   }
 }
 
@@ -114,7 +128,7 @@ export function getClaudeTasksBackendMeta(): KanbanBackendMeta {
   return getKanbanBackendMeta()
 }
 
-export async function listClaudeTasks(filters: TaskFilters = {}): Promise<ClaudeTaskRecord[]> {
+export async function listClaudeTasks(filters: TaskFilters = {}): Promise<Array<ClaudeTaskRecord>> {
   let tasks = (await listKanbanCards()).map(mapCardToTask)
   if (!filters.includeDone) {
     tasks = tasks.filter((task) => task.column !== 'done')

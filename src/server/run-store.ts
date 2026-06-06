@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { getHermesRoot } from './claude-paths'
@@ -209,6 +209,16 @@ export async function markRunStatus(
     lastEventAt: Date.now(),
     ...(errorMessage ? { errorMessage } : {}),
   }))
+}
+
+export async function deletePersistedRunsForSession(
+  sessionKey: string,
+): Promise<void> {
+  const prefix = `${encodeSessionKey(sessionKey)}:`
+  for (const key of runUpdateQueues.keys()) {
+    if (key.startsWith(prefix)) runUpdateQueues.delete(key)
+  }
+  await rm(sessionDir(sessionKey), { recursive: true, force: true })
 }
 
 // A run that hasn't been touched in this long is considered orphaned (e.g.

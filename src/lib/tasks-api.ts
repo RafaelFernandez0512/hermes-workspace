@@ -85,6 +85,18 @@ export function resetBackendResolution(): void {
 export type TaskColumn = 'backlog' | 'todo' | 'in_progress' | 'review' | 'blocked' | 'done' | 'deleted'
 export type TaskPriority = 'high' | 'medium' | 'low'
 
+export type TaskLatestRun = {
+  summary?: string | null
+  outcome?: string | null
+  status?: string | null
+  error?: string | null
+  metadata?: Record<string, unknown> | null
+  profile?: string | null
+  startedAt?: number | null
+  endedAt?: number | null
+  activities?: Array<string>
+}
+
 export type ClaudeTask = {
   id: string
   title: string
@@ -99,6 +111,19 @@ export type ClaudeTask = {
   created_at: string
   updated_at: string
   session_id?: string | null
+  blocked_reason?: string | null
+  latestRun?: TaskLatestRun | null
+}
+
+export type TaskCommentAction = 'approve' | 'approve_and_requeue' | 'request_changes' | 'retry' | 'reject' | 'system' | null
+
+export type TaskComment = {
+  id: string
+  task_id: string
+  author: string
+  body: string
+  created_at: string
+  action: TaskCommentAction
 }
 
 export type CreateTaskInput = {
@@ -206,16 +231,18 @@ export async function launchSession(taskId: string): Promise<{ sessionId: string
   return res.json()
 }
 
-export async function moveTask(taskId: string, column: TaskColumn, movedBy = 'user'): Promise<ClaudeTask> {
+export async function moveTask(taskId: string, column: TaskColumn, movedBy = 'user', blockedReason?: string): Promise<ClaudeTask> {
   const { base } = await resolveBackend()
+  const body: Record<string, unknown> = { column, moved_by: movedBy }
+  if (column === 'blocked' && blockedReason) body.blocked_reason = blockedReason
   const res = await fetch(`${base}/${taskId}?action=move`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ column, moved_by: movedBy }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error((body as { detail?: string }).detail || `Failed to move task: ${res.status}`)
+    const responseBody = await res.json().catch(() => ({}))
+    throw new Error((responseBody as { detail?: string }).detail || `Failed to move task: ${res.status}`)
   }
   return (await res.json()).task
 }
@@ -248,6 +275,40 @@ export const COLUMN_COLORS: Record<TaskColumn, string> = {
   blocked: '#ef4444',
   done: '#22c55e',
   deleted: '#374151',
+}
+
+// --- Task detail & comments -----------
+
+export async function fetchTaskDetails(taskId: string, signal?: AbortSignal): Promise<{ task: ClaudeTask; comments: Array<TaskComment> } | null> {
+  try {
+    const { base } = await resolveBackend()
+    const res = await fetch(`${base}/${taskId}`, { signal: signal ?? AbortSignal.timeout(5000) })
+    if (!res.ok) return null
+    const data = await res.json() as { task?: ClaudeTask; comments?: Array<TaskComment> }
+    if (!data.task) return null
+    return { task: data.task, comments: data.comments ?? [] }
+  } catch {
+    return null
+  }
+}
+
+export type ApprovalAction = 'approve' | 'approve-and-requeue' | 'request-changes' | 'retry' | 'reject' | 'comment'
+
+export async function performApprovalAction(
+  taskId: string,
+  action: ApprovalAction,
+  opts: { note?: string; author?: string } = {},
+): Promise<{ ok: boolean; task?: ClaudeTask; comment?: TaskComment }> {
+  const res = await fetch(`${HERMES_BASE}/${taskId}?action=${action}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note: opts.note, author: opts.author ?? 'user', body: opts.note }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error ?? `Action failed: ${res.status}`)
+  }
+  return res.json() as Promise<{ ok: boolean; task?: ClaudeTask; comment?: TaskComment }>
 }
 
 export function isOverdue(task: ClaudeTask): boolean {

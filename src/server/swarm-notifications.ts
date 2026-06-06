@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import type { ParsedSwarmCheckpoint } from './swarm-checkpoints'
 import { getSwarmProfilePath } from './swarm-foundation'
 import { publishChatEvent } from './chat-event-bus'
+import { publishSwarmEvent } from './swarm-event-bus'
 
 const ORCHESTRATOR_WORKER_ID = process.env.SWARM_ORCHESTRATOR_WORKER_ID?.trim() || 'orchestrator'
 const ORCHESTRATOR_TMUX_SESSION = `swarm-${ORCHESTRATOR_WORKER_ID}`
@@ -232,6 +233,28 @@ export function publishSwarmCheckpointNotification(input: {
     lastCheckpointRoute: publishedToMain ? 'main' : 'orchestrator',
     lastOrchestratorSendOk: orchestratorResult.sent,
   })
+
+  if (input.missionId) {
+    try {
+      publishSwarmEvent({
+        kind: 'checkpoint',
+        missionId: input.missionId,
+        assignmentId: input.assignmentId ?? undefined,
+        workerId: input.workerId,
+        ts: Date.now(),
+        payload: {
+          stateLabel: input.checkpoint.stateLabel,
+          result: input.checkpoint.result,
+          blocker: input.checkpoint.blocker,
+          nextAction: input.checkpoint.nextAction,
+          filesChanged: input.checkpoint.filesChanged,
+          commandsRun: input.checkpoint.commandsRun,
+        },
+      })
+    } catch {
+      /* best effort */
+    }
+  }
 
   const route: 'orchestrator' | 'main' | 'noop' = publishedToMain ? 'main' : (orchestratorResult.sent || orchestratorResult.skippedSelf ? 'orchestrator' : 'noop')
   return { published: publishedToMain || orchestratorResult.sent, sessionKey, route, orchestrator: orchestratorResult }

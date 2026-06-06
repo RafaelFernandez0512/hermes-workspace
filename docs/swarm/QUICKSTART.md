@@ -231,7 +231,13 @@ Check:
 
 Open Add Swarm or edit the roster config, then restart the worker session. Role, model, and skills are part of the worker identity; changing them mid-task creates weird ghosts. Weird ghosts are expensive.
 
-## 12. Safe operating boundary
+## 12. Need the full setup model?
+
+If you want the complete wiring for creating a new orchestrated workspace with its own operators, profiles, wrappers, and profile-scoped swarm membership, read:
+
+- [WORKSPACE-OPERATORS.md](./WORKSPACE-OPERATORS.md)
+
+## 13. Safe operating boundary
 
 The swarm can prepare commits, branches, PR bodies, review verdicts, issues, and release notes. It should not merge, force-push, publish, announce publicly, close issues, or perform destructive file operations without explicit human approval.
 

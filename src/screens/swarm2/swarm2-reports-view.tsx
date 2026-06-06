@@ -5,7 +5,7 @@ import { AgentProgress } from '@/components/agent-view/agent-progress'
 import { PixelAvatar } from '@/components/agent-swarm/pixel-avatar'
 import { cn } from '@/lib/utils'
 
-type ReportState = 'all' | 'needs_review' | 'ready' | 'blocked' | 'in_progress' | 'artifact'
+type ReportState = 'all' | 'needs_review' | 'ready' | 'blocked' | 'stale' | 'in_progress' | 'artifact'
 type ReportLayout = 'board' | 'cards' | 'list'
 
 type RuntimeArtifact = {
@@ -37,6 +37,10 @@ type RuntimeReportEntry = {
   lastResult?: string | null
   lastRealResult?: string | null
   blockedReason?: string | null
+  assignmentState?: string | null
+  assignmentBlocker?: string | null
+  assignmentStaleReason?: string | null
+  dispatchState?: string | null
   checkpointStatus?: string | null
   needsHuman?: boolean | null
   recentLogTail?: string | null
@@ -160,6 +164,9 @@ function splitChangedFiles(value: string | null | undefined): Array<RuntimeArtif
 function stateForAssignment(assignment: MissionAssignment): Exclude<ReportState, 'all'> {
   const checkpoint = assignment.checkpoint
   const statusText = `${assignment.state ?? ''} ${checkpoint?.stateLabel ?? ''} ${checkpoint?.checkpointStatus ?? ''}`.toLowerCase()
+  if (statusText.includes('stale')) {
+    return 'stale'
+  }
   if (
     statusText.includes('blocked') ||
     statusText.includes('needs_input') ||
@@ -173,8 +180,9 @@ function stateForAssignment(assignment: MissionAssignment): Exclude<ReportState,
 }
 
 function stateForRuntime(entry: RuntimeReportEntry): Exclude<ReportState, 'all'> {
-  const statusText = `${entry.checkpointStatus ?? ''} ${entry.currentTask ?? ''}`.toLowerCase()
-  if (entry.blockedReason || entry.needsHuman || statusText.includes('blocked') || statusText.includes('needs_input')) return 'blocked'
+  const statusText = `${entry.assignmentState ?? ''} ${entry.dispatchState ?? ''} ${entry.checkpointStatus ?? ''} ${entry.currentTask ?? ''}`.toLowerCase()
+  if (statusText.includes('stale')) return 'stale'
+  if (entry.blockedReason || entry.assignmentBlocker || entry.assignmentStaleReason || entry.needsHuman || statusText.includes('blocked') || statusText.includes('needs_input')) return 'blocked'
   if (statusText.includes('review')) return 'needs_review'
   if (statusText.includes('done') || statusText.includes('handoff') || entry.lastResult || entry.lastRealResult) return 'ready'
   if ((entry.artifacts?.length ?? 0) > 0 || (entry.previews?.length ?? 0) > 0) return 'artifact'
@@ -189,6 +197,8 @@ function stateLabel(state: Exclude<ReportState, 'all'>): string {
       return 'Ready'
     case 'blocked':
       return 'Blocked'
+    case 'stale':
+      return 'Stale'
     case 'artifact':
       return 'Artifact'
     case 'in_progress':
@@ -308,8 +318,8 @@ export function buildSwarm2InboxLanes({
   const rows = buildSwarm2ReportRows({ missions, runtimes })
   const actionable = rows.filter((row): row is Swarm2InboxItem => {
     if (row.kind !== 'checkpoint' || !row.missionId) return false
-    return row.state === 'needs_review' || row.state === 'blocked' || row.state === 'ready'
-  }).map((row) => ({ ...row, lane: row.state as Swarm2InboxLaneId }))
+    return row.state === 'needs_review' || row.state === 'blocked' || row.state === 'ready' || row.state === 'stale'
+  }).map((row) => ({ ...row, lane: (row.state === 'stale' ? 'blocked' : row.state) as Swarm2InboxLaneId }))
 
   return {
     needs_review: actionable.filter((row) => row.lane === 'needs_review'),
@@ -337,6 +347,8 @@ function toneClass(state: Exclude<ReportState, 'all'>): string {
       return 'border-amber-400/50 bg-amber-500/10 text-amber-700 dark:text-amber-200'
     case 'ready':
       return 'border-emerald-400/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+    case 'stale':
+      return 'border-orange-400/50 bg-orange-500/10 text-orange-700 dark:text-orange-200'
     case 'artifact':
       return 'border-[var(--theme-accent)]/40 bg-[var(--theme-accent-soft)] text-[var(--theme-accent-strong)]'
     case 'in_progress':
@@ -352,8 +364,10 @@ function statePriority(state: Exclude<ReportState, 'all'>): number {
       return 1
     case 'ready':
       return 2
-    case 'artifact':
+    case 'stale':
       return 3
+    case 'artifact':
+      return 4
     case 'in_progress':
       return 4
   }

@@ -81,6 +81,15 @@ function ChatRoute() {
     }
   }, [isNewChat, queryClient])
 
+  // Keep hermes-last-session in sync with the current session so coming back
+  // from a different route (e.g., dashboard) restores the right session.
+  useEffect(() => {
+    if (!activeFriendlyId || activeFriendlyId === 'new' || activeFriendlyId === 'main') return
+    try {
+      localStorage.setItem('hermes-last-session', activeFriendlyId)
+    } catch {}
+  }, [activeFriendlyId])
+
   const handleSessionResolved = useCallback(
     function handleSessionResolved(payload: {
       friendlyId: string
@@ -109,7 +118,7 @@ function ChatRoute() {
       })
       // Persist last session for refresh recovery
       try {
-        localStorage.setItem('claude-last-session', payload.friendlyId)
+        localStorage.setItem('hermes-last-session', payload.friendlyId)
       } catch {}
       navigate({
         to: '/chat/$sessionKey',

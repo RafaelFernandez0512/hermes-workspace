@@ -22,16 +22,19 @@ const ORCHESTRATOR_NAME_KEY = 'swarm2:orchestrator:name'
 const DEFAULT_NAME = 'Main Agent'
 
 type SwarmCardMode = 'cards' | 'office'
-type AgentLens = 'all' | 'working' | 'reviewing' | 'blocked' | 'ready'
+type AgentLens = 'all' | 'queued' | 'waiting_on_dependency' | 'executing' | 'stale' | 'blocked' | 'reviewing' | 'done'
 
 const AGENT_PAGE_SIZE = 12
 
 const AGENT_LENSES: Array<{ id: AgentLens; label: string }> = [
   { id: 'all', label: 'All' },
-  { id: 'working', label: 'Run' },
-  { id: 'reviewing', label: 'Review' },
+  { id: 'queued', label: 'Queued' },
+  { id: 'waiting_on_dependency', label: 'Waiting' },
+  { id: 'executing', label: 'Run' },
+  { id: 'stale', label: 'Stale' },
   { id: 'blocked', label: 'Blocked' },
-  { id: 'ready', label: 'Ready' },
+  { id: 'reviewing', label: 'Review' },
+  { id: 'done', label: 'Done' },
 ]
 
 export type Swarm2OrchestratorCardProps = {
@@ -44,7 +47,7 @@ export type Swarm2OrchestratorCardProps = {
   viewMode: 'cards' | 'kanban' | 'runtime' | 'reports'
   onViewModeChange: (mode: 'cards' | 'kanban' | 'runtime' | 'reports') => void
   lanes?: Array<{ role: string; count: number; active: number }>
-  activeAgents?: Array<{ workerId: string; workerName: string; role: string; task: string; progress: number; state: 'working' | 'reviewing' | 'blocked' | 'ready'; age: string }>
+  activeAgents?: Array<{ workerId: string; workerName: string; role: string; task: string; progress: number; state: 'queued' | 'waiting_on_dependency' | 'executing' | 'stale' | 'blocked' | 'reviewing' | 'done'; age: string }>
   members: Array<CrewMember>
   roomIds: Array<string>
   selectedId: string | null
@@ -120,14 +123,14 @@ export function Swarm2OrchestratorCard({
     setSettingsOpen(false)
   }
 
-  const isActive = activeRuntimeCount > 0
+  const isActive = activeRuntimeCount > 0 || activeAgents.some((agent) => agent.state !== 'done')
   const lensIndex = AGENT_LENSES.findIndex((lens) => lens.id === agentLens)
   const filteredAgents = useMemo(
     () => activeAgents.filter((agent) => agentLens === 'all' || agent.state === agentLens),
     [activeAgents, agentLens],
   )
   const agentCounts = useMemo(() => {
-    const counts: Record<AgentLens, number> = { all: activeAgents.length, working: 0, reviewing: 0, blocked: 0, ready: 0 }
+    const counts: Record<AgentLens, number> = { all: activeAgents.length, queued: 0, waiting_on_dependency: 0, executing: 0, stale: 0, blocked: 0, reviewing: 0, done: 0 }
     for (const agent of activeAgents) counts[agent.state] += 1
     return counts
   }, [activeAgents])
@@ -138,10 +141,10 @@ export function Swarm2OrchestratorCard({
     id: agent.workerId,
     name: agent.workerName,
     modelId: agent.role,
-    status: agent.state === 'blocked' ? 'error' : agent.state === 'ready' ? 'done' : 'active',
+    status: agent.state === 'blocked' || agent.state === 'stale' ? 'error' : agent.state === 'done' ? 'ready' : agent.state === 'queued' || agent.state === 'waiting_on_dependency' ? 'waiting_for_input' : 'active',
     lastLine: agent.task,
     lastAt: Date.now(),
-    taskCount: agent.state === 'ready' ? 0 : 1,
+    taskCount: agent.state === 'done' ? 0 : 1,
     currentTask: agent.task,
     roleDescription: agent.role,
   })), [activeAgents])
@@ -348,7 +351,7 @@ export function Swarm2OrchestratorCard({
               <div className="h-[360px] overflow-hidden rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-card)]">
                 <OfficeView
                   agentRows={officeAgents}
-                  missionRunning={activeAgents.some((agent) => agent.state === 'working' || agent.state === 'reviewing')}
+                  missionRunning={activeAgents.some((agent) => agent.state === 'queued' || agent.state === 'waiting_on_dependency' || agent.state === 'executing' || agent.state === 'reviewing')}
                   onViewOutput={() => undefined}
                   containerHeight={360}
                   hideHeader
@@ -358,18 +361,23 @@ export function Swarm2OrchestratorCard({
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {visibleAgents.map((agent) => {
                   const isBlocked = agent.state === 'blocked'
+                  const isStale = agent.state === 'stale'
+                  const isWaiting = agent.state === 'waiting_on_dependency'
+                  const isQueued = agent.state === 'queued'
                   const isReview = agent.state === 'reviewing'
+                  const isDone = agent.state === 'done'
+                  const accent = isBlocked ? '#ef4444' : isStale ? '#f97316' : isWaiting || isQueued ? '#60a5fa' : isReview ? '#f59e0b' : isDone ? '#22c55e' : '#34d399'
                   return (
                     <div key={agent.workerId} className="rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-card)] px-3 py-2.5">
                       <div className="flex items-start gap-2.5">
                         <div className="relative shrink-0">
                           <PixelAvatar
                             size={30}
-                            color={isBlocked ? '#ef4444' : isReview ? '#f59e0b' : '#34d399'}
-                            accentColor={isBlocked ? '#fecaca' : isReview ? '#fde68a' : '#bbf7d0'}
-                            status={isBlocked ? 'failed' : isReview ? 'thinking' : 'running'}
+                            color={accent}
+                            accentColor={isBlocked ? '#fecaca' : isStale ? '#fed7aa' : isWaiting || isQueued ? '#bfdbfe' : isReview ? '#fde68a' : isDone ? '#dcfce7' : '#bbf7d0'}
+                            status={isBlocked ? 'failed' : isStale ? 'failed' : isWaiting || isQueued ? 'idle' : isReview ? 'thinking' : isDone ? 'complete' : 'running'}
                           />
-                          <span className={cn('absolute -bottom-0.5 -right-0.5 size-2 rounded-full border border-[var(--theme-card)]', isBlocked ? 'bg-red-500' : isReview ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse')} />
+                          <span className={cn('absolute -bottom-0.5 -right-0.5 size-2 rounded-full border border-[var(--theme-card)]', isBlocked ? 'bg-red-500' : isStale ? 'bg-orange-500' : isWaiting || isQueued ? 'bg-sky-500' : isReview ? 'bg-amber-500' : isDone ? 'bg-emerald-500' : 'bg-emerald-500 animate-pulse')} />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
@@ -381,7 +389,7 @@ export function Swarm2OrchestratorCard({
                       </div>
                       <div className="mt-2 line-clamp-3 text-[10px] leading-snug text-[var(--theme-muted-2)]" title={agent.task}>{agent.task}</div>
                       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--theme-bg)]">
-                        <div className={cn('h-full rounded-full transition-all', isBlocked ? 'bg-red-500' : isReview ? 'bg-amber-500' : 'bg-[var(--theme-accent)]')} style={{ width: `${agent.progress}%` }} />
+                        <div className={cn('h-full rounded-full transition-all', isBlocked ? 'bg-red-500' : isStale ? 'bg-orange-500' : isWaiting || isQueued ? 'bg-sky-500' : isReview ? 'bg-amber-500' : isDone ? 'bg-emerald-500' : 'bg-[var(--theme-accent)]')} style={{ width: `${agent.progress}%` }} />
                       </div>
                     </div>
                   )

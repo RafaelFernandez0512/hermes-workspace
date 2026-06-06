@@ -7,6 +7,7 @@ import {
   dispatchBlockReason,
   runtimeCheckpointSignature,
   runtimeSnapshotIsFresh,
+  syntheticCheckpointFromWorkerResult,
 } from './swarm-dispatch'
 
 describe('checkpointFromRuntimeSnapshot', () => {
@@ -45,6 +46,42 @@ describe('checkpointFromRuntimeSnapshot', () => {
     })
 
     expect(checkpoint).toBeNull()
+  })
+})
+
+describe('syntheticCheckpointFromWorkerResult', () => {
+  it('parses a real worker checkpoint even when checkpoint polling was skipped', () => {
+    const checkpoint = syntheticCheckpointFromWorkerResult({
+      workerId: 'infrastructure-agent',
+      ok: true,
+      output: 'STATE: DONE\nFILES_CHANGED: none\nCOMMANDS_RUN: sleep 90\nRESULT: completed\nBLOCKER: none\nNEXT_ACTION: wait',
+      error: null,
+      durationMs: 1000,
+      exitCode: 0,
+      delivery: 'oneshot',
+      checkpointStatus: 'not-requested',
+    })
+
+    expect(checkpoint?.stateLabel).toBe('DONE')
+    expect(checkpoint?.checkpointStatus).toBe('done')
+    expect(checkpoint?.result).toBe('completed')
+  })
+
+  it('synthesizes a DONE checkpoint from plain successful oneshot output', () => {
+    const checkpoint = syntheticCheckpointFromWorkerResult({
+      workerId: 'infrastructure-agent',
+      ok: true,
+      output: 'sleep 90 completed successfully',
+      error: null,
+      durationMs: 1000,
+      exitCode: 0,
+      delivery: 'oneshot',
+      checkpointStatus: 'not-requested',
+    })
+
+    expect(checkpoint?.stateLabel).toBe('DONE')
+    expect(checkpoint?.checkpointStatus).toBe('done')
+    expect(checkpoint?.result).toContain('sleep 90 completed successfully')
   })
 })
 
@@ -112,10 +149,29 @@ describe('buildHermesTmuxLaunchCommand', () => {
       ghToken: 'ghp_te...3456',
     })
 
-    expect(command).toContain("HERMES_HOME='/tmp/hermes profiles/swarm1'")
-    expect(command).toContain("'/opt/homebrew/bin/hermes' chat --tui")
+    expect(command).toContain("env HERMES_HOME='/tmp/hermes profiles/swarm1'")
+    expect(command).toContain("HERMES_CLI_BIN='/opt/homebrew/bin/hermes'")
+    expect(command).toContain("bash -c '$HERMES_CLI_BIN chat --cli")
     expect(command).toContain('[Hermes worker exited with status %s]')
+    expect(command).not.toContain('status=$?')
     expect(command).not.toContain('exec ')
+  })
+
+  it('regression: no fish-incompatible patterns or TUI flag', () => {
+    const command = buildHermesTmuxLaunchCommand({
+      profilePath: '/home/user/.hermes',
+      hermesBin: '/usr/local/bin/hermes',
+    })
+
+    // Must use `env VAR=val bash -c ...`, never inline `VAR=val cmd` (fails in fish)
+    expect(command).toMatch(/^env /)
+    // Must not use `VAR=val cmd` without env prefix
+    expect(command).not.toMatch(/^HERMES_HOME=/)
+    expect(command).not.toMatch(/^HERMES_CLI_BIN=/)
+    // Must not use TUI mode for workers (can fail bootstrap in worker profiles)
+    expect(command).not.toContain('chat --tui')
+    // Must not use bash-only exit-status syntax
+    expect(command).not.toContain('status=$?')
   })
 })
 

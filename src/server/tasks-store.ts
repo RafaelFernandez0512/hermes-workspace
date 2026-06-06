@@ -20,6 +20,7 @@ export type TaskRecord = {
   created_at: string
   updated_at: string
   session_id?: string | null
+  blocked_reason?: string | null
 }
 
 type TaskFile = { tasks: TaskRecord[] }
@@ -76,6 +77,7 @@ function normalizeTask(task: Partial<TaskRecord> & Pick<TaskRecord, 'id' | 'titl
     created_at: task.created_at,
     updated_at: task.updated_at,
     session_id: task.session_id ?? null,
+    blocked_reason: task.blocked_reason ?? null,
   }
 }
 

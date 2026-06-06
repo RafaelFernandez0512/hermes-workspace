@@ -71,4 +71,27 @@ describe('normalizeHermesConfigState', () => {
       source: 'nested',
     })
   })
+
+  it('infers openai-codex provider from flat codex model ids', () => {
+    const state = normalizeHermesConfigState({
+      paths,
+      config: { model: 'gpt-5.4-mini' },
+      env: {},
+      authProfiles: {
+        providers: {
+          'openai-codex': { tokens: { access_token: 'tok-12345678' } },
+        },
+      },
+      localProviders: [],
+      localModels: [],
+    })
+
+    expect(state.activeProvider).toBe('openai-codex')
+    expect(state.activeModel).toBe('gpt-5.4-mini')
+    expect(state.defaultModel).toEqual({
+      provider: 'openai-codex',
+      model: 'gpt-5.4-mini',
+      source: 'flat',
+    })
+  })
 })

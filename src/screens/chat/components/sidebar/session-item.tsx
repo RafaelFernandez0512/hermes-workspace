@@ -132,7 +132,7 @@ function SessionItemComponent({
       params={{ sessionKey: session.friendlyId }}
       onClick={() => {
         try {
-          localStorage.setItem('claude-last-session', session.friendlyId)
+          localStorage.setItem('hermes-last-session', session.friendlyId)
         } catch {}
         onSelect?.()
       }}

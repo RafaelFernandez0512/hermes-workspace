@@ -1,10 +1,23 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { SwarmDetailPanel } from './detail/swarm-detail-panel'
 
 type KanbanLane = 'backlog' | 'ready' | 'running' | 'review' | 'blocked' | 'done'
+
+type SwarmKanbanLatestRun = {
+  summary?: string | null
+  outcome?: string | null
+  status?: string | null
+  error?: string | null
+  metadata?: Record<string, unknown> | null
+  profile?: string | null
+  startedAt?: number | null
+  endedAt?: number | null
+}
 
 type SwarmKanbanCard = {
   id: string
@@ -19,6 +32,7 @@ type SwarmKanbanCard = {
   createdBy: string
   createdAt: number
   updatedAt: number
+  latestRun?: SwarmKanbanLatestRun | null
 }
 
 type KanbanWorker = {
@@ -39,6 +53,13 @@ type KanbanBackendMeta = {
 type KanbanResponse = {
   cards?: Array<SwarmKanbanCard>
   backend?: KanbanBackendMeta
+}
+
+type KanbanTaskResponse = {
+  ok?: boolean
+  card?: SwarmKanbanCard
+  backend?: KanbanBackendMeta
+  error?: string
 }
 
 type Swarm2KanbanBoardProps = {
@@ -180,6 +201,15 @@ async function updateKanbanCard(id: string, updates: Partial<SwarmKanbanCard>): 
   return data.card
 }
 
+async function fetchKanbanCard(taskId: string): Promise<SwarmKanbanCard> {
+  const res = await fetch(`/api/swarm-kanban?taskId=${encodeURIComponent(taskId)}`)
+  const data = (await res.json().catch(() => ({}))) as KanbanTaskResponse
+  if (!res.ok || data.ok === false || !data.card) {
+    throw new Error(data.error || `Kanban task fetch failed: ${res.status}`)
+  }
+  return data.card
+}
+
 function splitCriteria(value: string): Array<string> {
   return value
     .split('\n')
@@ -191,6 +221,36 @@ function workerLabel(workers: Array<KanbanWorker>, workerId: string | null): str
   if (!workerId) return 'Unassigned'
   const worker = workers.find((item) => item.id === workerId)
   return worker?.displayName || workerId
+}
+
+function humanizeKey(value: string): string {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function formatRunTimestamp(ts: number | null | undefined): string | null {
+  if (typeof ts !== 'number' || !Number.isFinite(ts)) return null
+  const normalized = ts > 1_000_000_000_000 ? ts : ts * 1000
+  return new Date(normalized).toLocaleString()
+}
+
+function renderRunValue(value: unknown): ReactNode {
+  if (Array.isArray(value)) {
+    return (
+      <ul className="mt-1 space-y-1 pl-4 text-[11px] text-[var(--theme-text)]">
+        {value.map((item, index) => (
+          <li key={index} className="list-disc break-words text-[var(--theme-muted-2)]">
+            {typeof item === 'string' ? item : JSON.stringify(item)}
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  if (value && typeof value === 'object') {
+    return <pre className="mt-1 overflow-x-auto whitespace-pre-wrap rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-3 text-[11px] text-[var(--theme-text)]">{JSON.stringify(value, null, 2)}</pre>
+  }
+  return <span className="text-[var(--theme-muted-2)]">{String(value)}</span>
 }
 
 export function Swarm2KanbanBoard({
@@ -211,6 +271,8 @@ export function Swarm2KanbanBoard({
   const [draftStatus, setDraftStatus] = useState<KanbanLane>('backlog')
   const [linkLatestMission, setLinkLatestMission] = useState(Boolean(latestMission))
   const [backendToast, setBackendToast] = useState<KanbanBackendPresentation | null>(null)
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
+  const [detailMissionId, setDetailMissionId] = useState<string | null>(null)
   const lastToastedBackendKey = useRef<string | null>(null)
 
   // Poll every 5s so cards added/moved on the Hermes Dashboard appear here
@@ -245,6 +307,15 @@ export function Swarm2KanbanBoard({
     const timeout = window.setTimeout(() => setBackendToast(null), 4_500)
     return () => window.clearTimeout(timeout)
   }, [backend])
+
+  useEffect(() => {
+    if (!selectedCardId) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setSelectedCardId(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [selectedCardId])
 
   const createMutation = useMutation({
     mutationFn: () => createKanbanCard({
@@ -284,6 +355,21 @@ export function Swarm2KanbanBoard({
     }
     return map
   }, [query.data])
+
+  const selectedCardFromList = useMemo(
+    () => (query.data?.cards ?? []).find((card) => card.id === selectedCardId) ?? null,
+    [query.data?.cards, selectedCardId],
+  )
+
+  const selectedCardQuery = useQuery({
+    queryKey: ['swarm2', 'kanban', 'task', selectedCardId],
+    queryFn: () => fetchKanbanCard(selectedCardId ?? ''),
+    enabled: Boolean(selectedCardId),
+    staleTime: 0,
+    placeholderData: selectedCardFromList ?? undefined,
+  })
+
+  const selectedCard = selectedCardQuery.data ?? selectedCardFromList
 
   const total = query.data?.cards.length ?? 0
   const reviewCount = cardsByLane.get('review')?.length ?? 0
@@ -467,9 +553,49 @@ export function Swarm2KanbanBoard({
                 ) : laneCards.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-[var(--theme-border)] p-3 text-xs text-[var(--theme-muted)]">Empty</div>
                 ) : laneCards.map((card) => (
-                  <article key={card.id} className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-card)] p-3 text-left shadow-sm">
-                    <div className="text-sm font-semibold leading-snug text-[var(--theme-text)]">{card.title}</div>
+                  <article
+                    key={card.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open details for ${card.title}`}
+                    onClick={() => {
+                      if (card.missionId) {
+                        setDetailMissionId(card.missionId)
+                      } else {
+                        setSelectedCardId(card.id)
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        if (card.missionId) {
+                          setDetailMissionId(card.missionId)
+                        } else {
+                          setSelectedCardId(card.id)
+                        }
+                      }
+                    }}
+                    className={cn(
+                      'rounded-xl border border-[var(--theme-border)] bg-[var(--theme-card)] p-3 text-left shadow-sm transition-colors',
+                      'cursor-pointer hover:border-[var(--theme-accent)] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--theme-accent)]/40',
+                      selectedCardId === card.id && 'border-[var(--theme-accent)] ring-1 ring-[var(--theme-accent)]/30',
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 text-sm font-semibold leading-snug text-[var(--theme-text)]">{card.title}</div>
+                      {card.status === 'blocked' ? (
+                        <span className="relative flex h-2.5 w-2.5 shrink-0">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+                        </span>
+                      ) : null}
+                    </div>
                     {card.spec ? <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-[var(--theme-muted-2)]">{card.spec}</p> : null}
+                    {card.latestRun?.summary ? (
+                      <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-[var(--theme-text)]">
+                        <span className="font-semibold text-[var(--theme-muted)]">Result:</span> {card.latestRun.summary}
+                      </p>
+                    ) : null}
                     {card.acceptanceCriteria.length ? (
                       <ul className="mt-2 space-y-1 text-[11px] text-[var(--theme-muted)]">
                         {card.acceptanceCriteria.slice(0, 3).map((item, index) => <li key={`${card.id}-ac-${index}`}>✓ {item}</li>)}
@@ -484,12 +610,12 @@ export function Swarm2KanbanBoard({
                     </div>
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       {card.assignedWorker ? (
-                        <button type="button" onClick={() => onSelectWorker?.(card.assignedWorker!)} className="rounded-full border border-[var(--theme-border)] px-2 py-1 text-[10px] font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-card2)] hover:text-[var(--theme-text)]">Open worker</button>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); onSelectWorker?.(card.assignedWorker!) }} className="rounded-full border border-[var(--theme-border)] px-2 py-1 text-[10px] font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-card2)] hover:text-[var(--theme-text)]">Open worker</button>
                       ) : null}
-                      {card.status !== 'running' ? <button type="button" onClick={() => updateMutation.mutate({ id: card.id, updates: { status: 'running' } })} className="rounded-full border border-[var(--theme-border)] px-2 py-1 text-[10px] font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-card2)] hover:text-[var(--theme-text)]">Run</button> : null}
-                      {card.status !== 'review' ? <button type="button" onClick={() => updateMutation.mutate({ id: card.id, updates: { status: 'review' } })} className="rounded-full border border-[var(--theme-border)] px-2 py-1 text-[10px] font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-card2)] hover:text-[var(--theme-text)]">Review</button> : null}
-                      {card.status !== 'done' ? <button type="button" onClick={() => updateMutation.mutate({ id: card.id, updates: { status: 'done' } })} className="rounded-full border border-[var(--theme-border)] px-2 py-1 text-[10px] font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-card2)] hover:text-[var(--theme-text)]">Done</button> : null}
-                      {onOpenRouter ? <button type="button" onClick={onOpenRouter} className="rounded-full border border-[var(--theme-accent)] bg-[var(--theme-accent-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--theme-accent-strong)]">Router</button> : null}
+                      {card.status !== 'running' ? <button type="button" onClick={(event) => { event.stopPropagation(); updateMutation.mutate({ id: card.id, updates: { status: 'running' } }) }} className="rounded-full border border-[var(--theme-border)] px-2 py-1 text-[10px] font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-card2)] hover:text-[var(--theme-text)]">Run</button> : null}
+                      {card.status !== 'review' ? <button type="button" onClick={(event) => { event.stopPropagation(); updateMutation.mutate({ id: card.id, updates: { status: 'review' } }) }} className="rounded-full border border-[var(--theme-border)] px-2 py-1 text-[10px] font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-card2)] hover:text-[var(--theme-text)]">Review</button> : null}
+                      {card.status !== 'done' ? <button type="button" onClick={(event) => { event.stopPropagation(); updateMutation.mutate({ id: card.id, updates: { status: 'done' } }) }} className="rounded-full border border-[var(--theme-border)] px-2 py-1 text-[10px] font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-card2)] hover:text-[var(--theme-text)]">Done</button> : null}
+                      {onOpenRouter ? <button type="button" onClick={(event) => { event.stopPropagation(); onOpenRouter() }} className="rounded-full border border-[var(--theme-accent)] bg-[var(--theme-accent-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--theme-accent-strong)]">Router</button> : null}
                     </div>
                   </article>
                 ))}
@@ -498,6 +624,118 @@ export function Swarm2KanbanBoard({
           )
         })}
       </div>
+
+      <SwarmDetailPanel
+        missionId={detailMissionId}
+        onClose={() => setDetailMissionId(null)}
+      />
+
+      {selectedCardId ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setSelectedCardId(null)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-[var(--theme-border2)] bg-[var(--theme-card)] p-5 shadow-[0_30px_100px_var(--theme-shadow)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--theme-muted)]">Task detail</div>
+                <h3 className="mt-1 text-lg font-semibold text-[var(--theme-text)]">
+                  {selectedCard?.title ?? 'Loading task details…'}
+                </h3>
+                {selectedCard?.spec ? (
+                  <p className="mt-1 text-xs leading-relaxed text-[var(--theme-muted-2)]">
+                    {selectedCard.spec}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedCardId(null)}
+                className="rounded-lg border border-[var(--theme-border)] bg-[var(--theme-card2)] px-3 py-1.5 text-sm text-[var(--theme-muted)] hover:text-[var(--theme-text)]"
+              >
+                Close
+              </button>
+            </div>
+
+            {selectedCardQuery.isError ? (
+              <div className="mb-4 rounded-2xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-700">
+                {selectedCardQuery.error.message}
+              </div>
+            ) : null}
+
+            {selectedCardQuery.isPending && !selectedCard ? (
+              <div className="mb-4 rounded-2xl border border-dashed border-[var(--theme-border)] bg-[var(--theme-bg)] px-4 py-3 text-sm text-[var(--theme-muted)]">
+                Loading task details…
+              </div>
+            ) : null}
+
+            {selectedCard ? (
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--theme-muted)]">Current state</div>
+                    <div className="mt-2 space-y-1 text-sm text-[var(--theme-text)]">
+                      <div>Status: <span className="font-semibold">{selectedCard.status}</span></div>
+                      <div>Owner: <span className="font-semibold">{workerLabel(workers, selectedCard.assignedWorker)}</span></div>
+                      <div>Reviewer: <span className="font-semibold">{workerLabel(workers, selectedCard.reviewer)}</span></div>
+                      {selectedCard.missionId ? <div className="truncate" title={selectedCard.missionId}>Mission: {selectedCard.missionId}</div> : null}
+                      {selectedCard.reportPath ? <div className="truncate" title={selectedCard.reportPath}>Report: {selectedCard.reportPath}</div> : null}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--theme-muted)]">Run recap</div>
+                    <div className="mt-2 space-y-1 text-sm text-[var(--theme-text)]">
+                      <div>Outcome: <span className="font-semibold">{selectedCard.latestRun?.outcome ?? selectedCard.status}</span></div>
+                      {selectedCard.latestRun?.profile ? <div>Profile: <span className="font-semibold">{selectedCard.latestRun.profile}</span></div> : null}
+                      {formatRunTimestamp(selectedCard.latestRun?.startedAt) ? <div>Started: <span className="font-semibold">{formatRunTimestamp(selectedCard.latestRun?.startedAt)}</span></div> : null}
+                      {formatRunTimestamp(selectedCard.latestRun?.endedAt) ? <div>Ended: <span className="font-semibold">{formatRunTimestamp(selectedCard.latestRun?.endedAt)}</span></div> : null}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--theme-muted)]">Final result</div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[var(--theme-text)]">
+                    {selectedCard.latestRun?.summary ?? 'No final summary recorded for this task.'}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--theme-muted)]">Activities</div>
+                  <div className="mt-3 space-y-3 text-sm text-[var(--theme-text)]">
+                    {selectedCard.latestRun?.metadata && Object.keys(selectedCard.latestRun.metadata).length > 0 ? (
+                      Object.entries(selectedCard.latestRun.metadata).map(([key, value]) => (
+                        <div key={key} className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-card)] p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--theme-muted)]">
+                            {humanizeKey(key)}
+                          </div>
+                          {renderRunValue(value)}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-[var(--theme-border)] p-3 text-sm text-[var(--theme-muted)]">
+                        No structured activities captured on the latest run.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {selectedCard.latestRun?.error ? (
+                  <div className="rounded-2xl border border-red-400/40 bg-red-500/10 p-4 text-sm text-red-700">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em]">Run error</div>
+                    <p className="mt-2 whitespace-pre-wrap">{selectedCard.latestRun.error}</p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }

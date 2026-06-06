@@ -8,6 +8,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { Add01Icon, CheckListIcon, RefreshIcon } from '@hugeicons/core-free-icons'
 import { TaskCard } from './task-card'
 import { TaskDialog } from './task-dialog'
+import { TaskDetailPanel } from './task-detail-panel'
 import type { ClaudeTask, CreateTaskInput, TaskAssignee, TaskColumn } from '@/lib/tasks-api'
 import { toast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
@@ -51,10 +52,13 @@ export function TasksScreen() {
   const queryClient = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
   const [createColumn, setCreateColumn] = useState<TaskColumn>('backlog')
+  const [detailTask, setDetailTask] = useState<ClaudeTask | null>(null)
   const [editingTask, setEditingTask] = useState<ClaudeTask | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverColumn, setDragOverColumn] = useState<TaskColumn | null>(null)
   const [showDone, setShowDone] = useState(false)
+  const [pendingBlockedDrop, setPendingBlockedDrop] = useState<{ taskId: string } | null>(null)
+  const [blockedReasonInput, setBlockedReasonInput] = useState('')
 
   const search = useSearch({ from: '/tasks' })
   const navigate = useNavigate()
@@ -134,7 +138,8 @@ export function TasksScreen() {
   })
 
   const moveMutation = useMutation({
-    mutationFn: ({ id, column }: { id: string; column: TaskColumn }) => moveTask(id, column, 'user'),
+    mutationFn: ({ id, column, blockedReason }: { id: string; column: TaskColumn; blockedReason?: string }) =>
+      moveTask(id, column, 'user', blockedReason),
     onSuccess: () => invalidate(),
     onError: (e) => toast(e instanceof Error ? e.message : 'Failed to move task', { type: 'error' }),
   })
@@ -162,6 +167,13 @@ export function TasksScreen() {
     // tasks into the 'done' column — agents may move to 'review' at most.
     if (targetColumn === 'done' && humanReviewer) {
       toast(`Only ${humanReviewer} can mark tasks as done`, { type: 'error' })
+      setDraggingId(null)
+      setDragOverColumn(null)
+      return
+    }
+    if (targetColumn === 'blocked') {
+      setPendingBlockedDrop({ taskId })
+      setBlockedReasonInput('')
       setDraggingId(null)
       setDragOverColumn(null)
       return
@@ -354,7 +366,7 @@ export function TasksScreen() {
                             assigneeLabels={assigneeLabels}
                             isDragging={draggingId === task.id}
                             onDragStart={e => handleDragStart(e, task.id)}
-                            onClick={() => setEditingTask(task)}
+                            onClick={() => setDetailTask(task)}
                           />
                         </motion.div>
                       ))
@@ -377,7 +389,16 @@ export function TasksScreen() {
         onSubmit={async (input) => { await createMutation.mutateAsync(input) }}
       />
 
-      {/* Edit dialog */}
+      {/* Task detail panel — opens on card click */}
+      <TaskDetailPanel
+        open={detailTask !== null}
+        onOpenChange={(open) => { if (!open) setDetailTask(null) }}
+        task={detailTask}
+        onEdit={(task) => { setDetailTask(null); setEditingTask(task) }}
+        onTaskUpdated={invalidate}
+      />
+
+      {/* Edit dialog — opened from detail panel or directly */}
       <TaskDialog
         open={editingTask !== null}
         onOpenChange={(open) => { if (!open) setEditingTask(null) }}
@@ -389,6 +410,68 @@ export function TasksScreen() {
           await updateMutation.mutateAsync({ id: editingTask.id, input })
         }}
       />
+
+      {/* Block reason dialog — shown when dragging a task to the blocked column */}
+      {pendingBlockedDrop && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+        >
+          <div
+            className="w-[min(420px,94vw)] rounded-2xl border p-5 flex flex-col gap-3"
+            style={{ background: 'var(--theme-bg)', borderColor: '#ef444455' }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-400 shrink-0" />
+              <p className="text-sm font-semibold" style={{ color: '#ef4444' }}>Why is this task blocked?</p>
+            </div>
+            <textarea
+              autoFocus
+              rows={3}
+              className="w-full rounded-lg border px-3 py-2 text-xs resize-none focus:outline-none focus:ring-1"
+              style={{
+                background: 'var(--theme-input)',
+                borderColor: 'var(--theme-border)',
+                color: 'var(--theme-text)',
+              }}
+              placeholder="Describe what's blocking this task (optional)..."
+              value={blockedReasonInput}
+              onChange={e => setBlockedReasonInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  moveMutation.mutate({ id: pendingBlockedDrop.taskId, column: 'blocked', blockedReason: blockedReasonInput.trim() || undefined })
+                  setPendingBlockedDrop(null)
+                }
+                if (e.key === 'Escape') {
+                  setPendingBlockedDrop(null)
+                }
+              }}
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded-lg text-xs transition-colors"
+                style={{ color: 'var(--theme-muted)' }}
+                onClick={() => setPendingBlockedDrop(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+                style={{ background: '#ef4444' }}
+                onClick={() => {
+                  moveMutation.mutate({ id: pendingBlockedDrop.taskId, column: 'blocked', blockedReason: blockedReasonInput.trim() || undefined })
+                  setPendingBlockedDrop(null)
+                }}
+              >
+                Mark as Blocked
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </div>
   )

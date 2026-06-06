@@ -45,4 +45,25 @@ describe('run-store persistence', () => {
       events.map((event) => event.text).sort(),
     )
   })
+
+  it('deletes all persisted runs for a session', async () => {
+    const {
+      createPersistedRun,
+      deletePersistedRunsForSession,
+      getPersistedRun,
+    } = await import('./run-store')
+
+    await createPersistedRun({ runId: 'run-1', sessionKey: 'session-1' })
+    await createPersistedRun({ runId: 'run-2', sessionKey: 'session-1' })
+    await createPersistedRun({ runId: 'run-3', sessionKey: 'session-2' })
+
+    await deletePersistedRunsForSession('session-1')
+
+    await expect(getPersistedRun('session-1', 'run-1')).resolves.toBeNull()
+    await expect(getPersistedRun('session-1', 'run-2')).resolves.toBeNull()
+    await expect(getPersistedRun('session-2', 'run-3')).resolves.toMatchObject({
+      runId: 'run-3',
+      sessionKey: 'session-2',
+    })
+  })
 })

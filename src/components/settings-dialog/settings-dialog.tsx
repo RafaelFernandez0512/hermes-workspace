@@ -200,7 +200,7 @@ const PROVIDER_CARDS: Array<{
     id: 'openai-codex',
     name: 'OpenAI Codex',
     logo: '/providers/openai.png',
-    models: ['gpt-5.4', 'gpt-5.3-codex', 'gpt-4o'],
+    models: ['gpt-5.5', 'gpt-5.4-mini', 'gpt-5.4', 'gpt-5.3-codex'],
     authType: 'oauth',
   },
   {
@@ -252,9 +252,10 @@ export function getProviderClickAction(input: {
   providerId?: string
   authType: 'oauth' | 'api_key' | 'none'
   hasKey: boolean
+  isConfigured?: boolean
 }): ProviderClickAction {
   if (input.providerId === 'custom') return 'custom'
-  if (input.authType === 'oauth') return 'oauth'
+  if (input.authType === 'oauth') return input.isConfigured ? 'select' : 'oauth'
   if (input.authType === 'none') return 'local'
   return input.hasKey ? 'select' : 'ignore'
 }
@@ -281,9 +282,9 @@ const DEFAULT_OAUTH_EXPIRES_SECONDS = 600
 const DEFAULT_OAUTH_POLL_INTERVAL_SECONDS = 3
 
 export function getOAuthStartButtonLabel(status: OAuthStatus): string {
-  return status === 'starting' || status === 'pending'
-    ? 'Waiting...'
-    : 'Start OAuth'
+  if (status === 'starting' || status === 'pending') return 'Waiting...'
+  if (status === 'success') return 'Connected'
+  return 'Start OAuth'
 }
 
 type OAuthDeviceCodeResponse = {
@@ -314,6 +315,9 @@ function HermesContent() {
   const [configuredKeys, setConfiguredKeys] = useState<Record<string, string>>(
     {},
   )
+  const [configuredOAuthProviders, setConfiguredOAuthProviders] = useState<
+    Record<string, boolean>
+  >({})
   const [memEnabled, setMemEnabled] = useState(true)
   const [userProfileEnabled, setUserProfileEnabled] = useState(true)
   const [customBaseUrl, setCustomBaseUrl] = useState('')
@@ -354,7 +358,13 @@ function HermesContent() {
       )
         .then((r) => r.json())
         .then((d: { models?: Array<{ id: string }> }) => {
-          setAvailableModels((d.models || []).map((m) => m.id))
+          const models = (d.models || []).map((m) => m.id).filter(Boolean)
+          if (models.length > 0) {
+            setAvailableModels(models)
+            return
+          }
+          const card = PROVIDER_CARDS.find((p) => p.id === providerId)
+          setAvailableModels(card?.models || [])
         })
         .catch(() => {
           // Fall back to hardcoded
@@ -388,12 +398,17 @@ function HermesContent() {
         setUserProfileEnabled(mem.user_profile_enabled !== false)
         // Build configured keys map
         const keys: Record<string, string> = {}
+        const oauthProviders: Record<string, boolean> = {}
         for (const p of d.providers || []) {
+          if (p.kind === 'oauth' && p.configured) {
+            oauthProviders[p.id] = true
+          }
           const envKey = p.envKeys?.[0]
           if (!p.configured || !envKey) continue
           keys[envKey] = p.maskedCredentials?.[envKey] || '••••'
         }
         setConfiguredKeys(keys)
+        setConfiguredOAuthProviders(oauthProviders)
         // Load custom provider config (may be stored as 'custom' or legacy 'manifest')
         const cfgProviders = (d.config?.providers as Record<string, any>) || {}
         const customCfg = cfgProviders['custom'] || cfgProviders['manifest'] || {}
@@ -417,12 +432,17 @@ function HermesContent() {
       setCustomModel(d.activeModel)
     }
     const keys: Record<string, string> = {}
+    const oauthProviders: Record<string, boolean> = {}
     for (const p of d.providers || []) {
+      if (p.kind === 'oauth' && p.configured) {
+        oauthProviders[p.id] = true
+      }
       const envKey = p.envKeys?.[0]
       if (!p.configured || !envKey) continue
       keys[envKey] = p.maskedCredentials?.[envKey] || '••••'
     }
     setConfiguredKeys(keys)
+    setConfiguredOAuthProviders(oauthProviders)
   }
 
   const save = async (
@@ -662,6 +682,7 @@ function HermesContent() {
             // check is wired. Local providers require live discovery hit.
             const verified =
               (p.authType === 'none' && localOnline) ||
+              (p.authType === 'oauth' && !!configuredOAuthProviders[p.id]) ||
               (p.authType === 'api_key' &&
                 !!p.envKey &&
                 !!configuredKeys[p.envKey])
@@ -683,6 +704,7 @@ function HermesContent() {
                     providerId: p.id,
                     authType: p.authType,
                     hasKey,
+                    isConfigured: p.authType === 'oauth' ? verified : undefined,
                   })
                   if (action === 'oauth') {
                     resetOAuthState(p.id)
@@ -725,7 +747,9 @@ function HermesContent() {
                       (lp) => lp.id === p.id,
                     )
                     if (disc?.online) return '🟢 Detected'
-                    if (p.authType === 'oauth') return 'OAuth'
+                    if (p.authType === 'oauth') {
+                      return verified ? 'Connected' : 'OAuth'
+                    }
                     if (p.authType === 'none') return 'Local'
                     return hasKey ? 'Key set' : 'Key required'
                   })()}
@@ -750,7 +774,7 @@ function HermesContent() {
                   </div>
                   <Button
                     size="sm"
-                    disabled={oauthStatus === 'starting' || oauthStatus === 'pending'}
+                    disabled={oauthStatus === 'starting' || oauthStatus === 'pending' || oauthStatus === 'success'}
                     onClick={() => {
                       void startOAuthFlow()
                     }}

@@ -517,6 +517,19 @@ async function probeMcp(): Promise<boolean> {
  * silently enable on a remote deployment.
  */
 export function isLocalhostDeployment(): boolean {
+  const allowRemoteMcpFallback = (
+    process.env.HERMES_ALLOW_REMOTE_MCP_FALLBACK || ''
+  )
+    .trim()
+    .toLowerCase()
+  if (
+    allowRemoteMcpFallback === '1' ||
+    allowRemoteMcpFallback === 'true' ||
+    allowRemoteMcpFallback === 'yes'
+  ) {
+    return true
+  }
+
   const isLoopbackHost = (host: string): boolean => {
     const h = host.trim().toLowerCase()
     if (!h) return false

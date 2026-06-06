@@ -132,6 +132,21 @@ export const SwarmTerminal = memo(function SwarmTerminal({
   }, [stop])
 
   useEffect(() => {
+    if (!active) {
+      stop()
+      const terminal = terminalRef.current
+      terminalRef.current = null
+      fitRef.current = null
+      try {
+        terminal?.dispose()
+      } catch {
+        /* noop */
+      }
+      setError(null)
+      setState('idle')
+      return
+    }
+
     let cancelled = false
 
     async function bootstrap() {
@@ -311,7 +326,7 @@ export const SwarmTerminal = memo(function SwarmTerminal({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workerId, command.join('|'), cwd, reconnectKey, focusTerminal, flushPendingInput])
+  }, [active, workerId, command.join('|'), cwd, reconnectKey, focusTerminal, flushPendingInput, stop])
 
   useEffect(() => {
     if (!active) return

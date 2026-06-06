@@ -41,6 +41,10 @@ export type DispatchResponse = {
   dispatchedAt: number
   completedAt: number
   results: Array<DispatchResult>
+  accepted?: boolean
+  missionId?: string
+  runId?: string | null
+  summary?: { started: number; checkpointed: number; stale: number; blocked: number }
 }
 
 type FollowUpResponse = {
@@ -103,6 +107,7 @@ export function RouterChat({
   const [dispatching, setDispatching] = useState(false)
   const [dispatchError, setDispatchError] = useState<string | null>(null)
   const [results, setResults] = useState<DispatchResponse | null>(null)
+  const [dispatchReceipt, setDispatchReceipt] = useState<{ missionId?: string; runId?: string | null; accepted: boolean; summary?: DispatchResponse['summary'] | null } | null>(null)
   const [followUp, setFollowUp] = useState<FollowUpResponse | null>(null)
 
   useEffect(() => {
@@ -112,6 +117,7 @@ export function RouterChat({
     setAssignments([])
     setUnassigned([])
     setResults(null)
+    setDispatchReceipt(null)
     setFollowUp(null)
     setDecomposeError(null)
     setDispatchError(null)
@@ -243,6 +249,7 @@ export function RouterChat({
           assignments: plan,
           timeoutSeconds: 300,
           waitForCheckpoint: false,
+          allowAsync: true,
         }),
         signal: AbortSignal.timeout(60_000),
       })
@@ -251,9 +258,15 @@ export function RouterChat({
         throw new Error(text || `HTTP ${res.status}`)
       }
       const data = (await res.json()) as DispatchResponse
-      setResults(data)
+      setDispatchReceipt({
+        missionId: data.missionId,
+        runId: data.runId ?? null,
+        accepted: data.accepted !== false,
+        summary: data.summary ?? null,
+      })
+      setResults(Array.isArray(data.results) && data.results.length > 0 ? data : null)
       onResults(data)
-      if (plan.length > 1 && data.results.some((result) => result.checkpointStatus === 'checkpointed')) {
+      if (plan.length > 1 && Array.isArray(data.results) && data.results.some((result) => result.checkpointStatus === 'checkpointed')) {
         const reviewer = members.find((member) => member.id === 'swarm6') ?? members.find((member) => /review|qa|critic/i.test(`${member.role} ${member.specialty ?? ''}`))
         const follow = await fetch('/api/swarm-orchestrator-loop', {
           method: 'POST',
@@ -281,6 +294,7 @@ export function RouterChat({
     setAssignments([])
     setUnassigned([])
     setResults(null)
+    setDispatchReceipt(null)
     setFollowUp(null)
     setDecomposeError(null)
     setDispatchError(null)
@@ -430,6 +444,19 @@ export function RouterChat({
                 {dispatchError}
               </div>
             ) : null}
+            {dispatchReceipt ? (
+              <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-2 text-xs text-[var(--theme-text)]">
+                <div className="font-semibold uppercase tracking-[0.16em] text-[var(--theme-muted)]">Dispatch accepted</div>
+                <div className="mt-1 text-[var(--theme-muted-2)]">
+                  Mission {dispatchReceipt.missionId ?? 'queued'}{dispatchReceipt.runId ? ` · Run ${dispatchReceipt.runId}` : ''}
+                </div>
+                {dispatchReceipt.summary ? (
+                  <div className="mt-1 text-[var(--theme-muted-2)]">
+                    Started {dispatchReceipt.summary.started} · checkpointed {dispatchReceipt.summary.checkpointed} · stale {dispatchReceipt.summary.stale} · blocked {dispatchReceipt.summary.blocked}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           {!embedded ? (
@@ -480,6 +507,18 @@ export function RouterChat({
                       }
                       className="mt-1 w-full resize-none rounded-md border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2 py-1 text-[11px] text-[var(--theme-text)] focus:border-[var(--theme-accent)] focus:outline-none"
                     />
+                    {a.dependsOn?.length ? (
+                      <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-[var(--theme-muted)]">
+                        <span className="uppercase tracking-[0.18em] text-[var(--theme-muted)]">Depends on</span>
+                        {a.dependsOn.map((dep) => (
+                          <span key={dep} className="rounded-full border border-[var(--theme-border)] bg-[var(--theme-bg)] px-1.5 py-0.5">
+                            {dep}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-[10px] text-[var(--theme-muted)]">Depends on: none</div>
+                    )}
                     {a.rationale ? (
                       <div className="mt-1 text-[10px] italic text-[var(--theme-muted-2)]">
                         {a.rationale}

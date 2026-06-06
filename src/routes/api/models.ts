@@ -27,6 +27,13 @@ type ModelEntry = {
   [key: string]: unknown
 }
 
+const OPENAI_CODEX_MODEL_FALLBACKS = [
+  'gpt-5.5',
+  'gpt-5.4-mini',
+  'gpt-5.4',
+  'gpt-5.3-codex',
+]
+
 function asRecord(value: unknown): Record<string, unknown> {
   if (value && typeof value === 'object' && !Array.isArray(value))
     return value as Record<string, unknown>
@@ -37,6 +44,20 @@ function readString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function inferProviderFromModelId(modelId: string): string {
+  const normalized = modelId.trim().toLowerCase().replace(/[\s_]+/g, '-')
+  if (!normalized) return ''
+  if (normalized.startsWith('openai-codex/')) return 'openai-codex'
+  if (
+    /^gpt-5\.5$/.test(normalized) ||
+    /^gpt-5\.4(?:-mini)?$/.test(normalized) ||
+    /^gpt-5\.3-codex(?:-spark)?$/.test(normalized)
+  ) {
+    return 'openai-codex'
+  }
+  return ''
+}
+
 function normalizeModel(entry: unknown): ModelEntry | null {
   if (typeof entry === 'string') {
     const id = entry.trim()
@@ -44,7 +65,7 @@ function normalizeModel(entry: unknown): ModelEntry | null {
     return {
       id,
       name: id,
-      provider: id.includes('/') ? id.split('/')[0] : 'unknown',
+      provider: id.includes('/') ? id.split('/')[0] : inferProviderFromModelId(id) || 'unknown',
     }
   }
   const record = asRecord(entry)
@@ -62,7 +83,7 @@ function normalizeModel(entry: unknown): ModelEntry | null {
     provider:
       readString(record.provider) ||
       readString(record.owned_by) ||
-      (id.includes('/') ? id.split('/')[0] : 'unknown'),
+      (id.includes('/') ? id.split('/')[0] : inferProviderFromModelId(id) || 'unknown'),
   }
 }
 
@@ -100,7 +121,7 @@ function readClaudeModelsJson(): Array<ModelEntry> {
         return {
           id: modelId,
           name: readString(record.name) || modelId,
-          provider: readString(record.provider) || 'unknown',
+          provider: readString(record.provider) || inferProviderFromModelId(modelId) || 'unknown',
         }
       })
       .filter((entry): entry is ModelEntry => entry !== null)
@@ -153,7 +174,8 @@ function readClaudeDefaultModel(): ModelEntry | null {
     const modelField = config.model
     if (typeof modelField === 'string') {
       modelId = modelField
-      provider = (config.provider as string) || 'unknown'
+      provider =
+        (config.provider as string) || inferProviderFromModelId(modelField) || 'unknown'
     } else if (modelField && typeof modelField === 'object') {
       const modelObj = modelField as Record<string, unknown>
       modelId = (modelObj.default as string) || ''
@@ -228,6 +250,19 @@ export const Route = createFileRoute('/api/models')({
             ensureProviderInConfig(m.provider)
           }
 
+          const currentProvider = defaultModel?.provider || ''
+          if (currentProvider === 'openai-codex') {
+            models = mergeModelEntries(
+              models,
+              OPENAI_CODEX_MODEL_FALLBACKS.map((id) => ({
+                id,
+                name: id,
+                provider: 'openai-codex',
+              })),
+            )
+            source = `${source}+codex-fallback`
+          }
+
           const configuredProviders = Array.from(
             new Set(
               models
@@ -246,6 +281,7 @@ export const Route = createFileRoute('/api/models')({
             data: models,
             models,
             configuredProviders,
+            currentProvider,
             source,
             ...streamTimeouts,
           })

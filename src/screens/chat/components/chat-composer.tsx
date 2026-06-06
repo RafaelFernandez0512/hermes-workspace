@@ -580,14 +580,18 @@ function getResolvedModelKey(model: string, provider?: string): string {
  *   2. The current model ends with "/<entry.id>" (provider-prefixed match), or
  *   3. The resolved key from entry (provider/id) equals the current model.
  */
+function normalizeModelIdentity(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s_]+/g, '-')
+}
+
 function isCurrentModel(
   currentModel: string,
   entryId: string,
   entryProvider: string,
 ): boolean {
-  const cm = currentModel.trim()
-  const eid = entryId.trim()
-  const eprov = entryProvider.trim()
+  const cm = normalizeModelIdentity(currentModel)
+  const eid = normalizeModelIdentity(entryId)
+  const eprov = normalizeModelIdentity(entryProvider)
   if (!cm || !eid) return false
 
   // Exact match (bare ID)
@@ -1227,6 +1231,7 @@ function ChatComposerComponent({
   // updates without a render-window flash from a stale React-state mirror.
   const modelButtonLabel =
     persistedSessionModel || currentModel || configuredModel || '⚕ Hermes Agent'
+  const formattedModelButtonLabel = formatModelName(modelButtonLabel)
 
   // Measure composer height and set CSS variable for scroll padding
   useLayoutEffect(() => {
@@ -2798,8 +2803,8 @@ function ChatComposerComponent({
                         setIsModelMenuOpen(false)
                       }}
                       className="inline-flex h-8 items-center gap-1.5 rounded-full bg-primary-100/70 px-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-200/80 dark:hover:bg-primary-800/60"
-                      title={`Chat controls · ${modelButtonLabel}`}
-                      aria-label={`Chat controls, current model: ${modelButtonLabel}`}
+                      title={`Chat controls · ${formattedModelButtonLabel}`}
+                      aria-label={`Chat controls, current model: ${formattedModelButtonLabel}`}
                     >
                       <svg
                         width="13"
@@ -2819,7 +2824,7 @@ function ChatComposerComponent({
                         <circle cx="15" cy="12" r="2" fill="currentColor" stroke="none" />
                         <circle cx="11" cy="18" r="2" fill="currentColor" stroke="none" />
                       </svg>
-                      <span className="max-w-[5rem] truncate sm:max-w-[8rem] md:max-w-[10rem]">{formatModelName(modelButtonLabel)}</span>
+                      <span className="max-w-[5rem] truncate sm:max-w-[8rem] md:max-w-[10rem]">{formattedModelButtonLabel}</span>
                       <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
                     </button>
                     {isControlsMenuOpen ? (
@@ -2956,9 +2961,9 @@ function ChatComposerComponent({
                               }}
                               disabled={isModelSwitcherDisabled}
                               className="inline-flex h-8 max-w-[9rem] items-center rounded-full bg-primary-100/70 px-2 md:max-w-none md:px-3 text-xs font-medium text-primary-600 hover:bg-primary-200/80 dark:hover:bg-primary-800/60 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                              title={modelButtonLabel}
+                              title={formattedModelButtonLabel}
                             >
-                              <span className="max-w-[5.5rem] truncate sm:max-w-[8.5rem] md:max-w-[12rem]">{modelButtonLabel}</span>
+                              <span className="max-w-[5.5rem] truncate sm:max-w-[8.5rem] md:max-w-[12rem]">{formattedModelButtonLabel}</span>
                             </button>
                             {isModelMenuOpen && (
                               <>

@@ -152,6 +152,12 @@ type RuntimeEntry = {
   lastSummary?: string | null
   lastResult?: string | null
   blockedReason?: string | null
+  assignmentState?: string | null
+  assignmentBlocker?: string | null
+  assignmentStaleReason?: string | null
+  assignmentDependsOn?: Array<string>
+  dispatchState?: string | null
+  runId?: string | null
   checkpointStatus?: string | null
   state?: string | null
   needsHuman?: boolean | null
@@ -495,8 +501,16 @@ function isRuntimeActive(entry: RuntimeEntry | undefined): boolean {
   if (!entry) return false
   if (entry.tmuxAttachable) return true
   if (entry.currentTask?.trim()) return true
-  const last = entry.lastOutputAt ?? entry.lastSessionStartedAt
-  return typeof last === 'number' && Date.now() - last < 12 * 60 * 60 * 1000
+  if (entry.checkpointStatus === 'in_progress' || entry.checkpointStatus === 'needs_input' || entry.checkpointStatus === 'handoff') {
+    return true
+  }
+  if (entry.assignmentState && entry.assignmentState !== 'done' && entry.assignmentState !== 'cancelled') {
+    return true
+  }
+  if (entry.state === 'executing' || entry.state === 'running' || entry.state === 'blocked' || entry.phase === 'reviewing') {
+    return true
+  }
+  return false
 }
 
 function scrollNodeToTop(node: HTMLElement | null) {
@@ -662,7 +676,7 @@ type ControlPlaneStageProps = {
   selectedLabel: string
   workspaceModel: string | null
   lanes: Array<{ role: string; count: number; active: number }>
-  activeAgents: Array<{ workerId: string; workerName: string; role: string; task: string; progress: number; state: 'working' | 'reviewing' | 'blocked' | 'ready'; age: string }>
+  activeAgents: Array<{ workerId: string; workerName: string; role: string; task: string; progress: number; state: 'queued' | 'waiting_on_dependency' | 'executing' | 'stale' | 'blocked' | 'done' | 'reviewing'; age: string }>
   recentUpdates: Array<{ workerId: string; workerName: string; text: string; age: string; tone: 'idle' | 'active' | 'warning' }>
   latestMission: { id: string; title: string; state: string; assignmentCount: number; checkpointedCount: number } | null
   missions: Array<SwarmMissionSummary>
@@ -1284,16 +1298,29 @@ export function Swarm2Screen() {
       .map((member) => {
         const runtime = runtimeByWorker.get(member.id)
         const currentTask = runtime?.currentTask?.trim()
-        const blocked = Boolean(runtime?.blockedReason || runtime?.needsHuman || runtime?.checkpointStatus === 'blocked' || runtime?.checkpointStatus === 'needs_input')
-        const done = runtime?.checkpointStatus === 'done' || runtime?.checkpointStatus === 'handoff'
-        if (!currentTask && !blocked) return null
-        const state: 'working' | 'reviewing' | 'blocked' | 'ready' = blocked
+        const assignmentState = (runtime?.assignmentState ?? '').toLowerCase()
+        const blocked = Boolean(runtime?.blockedReason || runtime?.assignmentBlocker || runtime?.assignmentStaleReason || runtime?.needsHuman || runtime?.checkpointStatus === 'blocked' || runtime?.checkpointStatus === 'needs_input')
+        const done = assignmentState === 'done' || runtime?.checkpointStatus === 'done' || runtime?.checkpointStatus === 'handoff'
+        const waiting = assignmentState === 'waiting_on_dependency'
+        const queued = assignmentState === 'queued'
+        const executing = assignmentState === 'executing' || assignmentState === 'dispatched' || Boolean(currentTask)
+        const stale = assignmentState === 'stale'
+        if (!currentTask && !blocked && !assignmentState) return null
+        const state: 'queued' | 'waiting_on_dependency' | 'executing' | 'stale' | 'blocked' | 'done' | 'reviewing' = blocked
           ? 'blocked'
-          : done
-            ? 'ready'
-            : `${runtime?.phase ?? ''} ${currentTask ?? ''}`.toLowerCase().includes('review')
-              ? 'reviewing'
-              : 'working'
+          : stale
+            ? 'stale'
+            : waiting
+              ? 'waiting_on_dependency'
+              : queued
+                ? 'queued'
+                : done
+                  ? 'done'
+                  : `${runtime?.phase ?? ''} ${currentTask ?? ''}`.toLowerCase().includes('review')
+                    ? 'reviewing'
+                    : executing
+                      ? 'executing'
+                      : 'queued'
         const ts = runtime?.lastOutputAt ?? runtime?.lastSessionStartedAt ?? member.lastSessionAt ?? null
         return {
           workerId: member.id,
@@ -1308,7 +1335,7 @@ export function Swarm2Screen() {
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item))
       .sort((a, b) => {
-        const priority = { blocked: 0, reviewing: 1, working: 2, ready: 3 }
+        const priority = { blocked: 0, stale: 1, waiting_on_dependency: 2, queued: 3, executing: 4, reviewing: 5, done: 6 }
         return priority[a.state] - priority[b.state] || b.ts - a.ts || a.workerId.localeCompare(b.workerId)
       })
       .map((item) => ({
@@ -1332,7 +1359,7 @@ export function Swarm2Screen() {
       setSelectedId(item.workerId)
       setFocusedRuntimeWorkerId(item.workerId)
     }
-    setViewMode('reports')
+    setViewMode('runtime')
     setNotificationsOpen(false)
   }, [])
 
@@ -1402,10 +1429,10 @@ export function Swarm2Screen() {
         const runtime = runtimeByWorker.get(member.id)
         const ts = runtime?.lastOutputAt ?? runtime?.lastSessionStartedAt ?? member.lastSessionAt ?? null
         const rawText = runtime?.lastRealSummary ?? runtime?.lastRealResult ?? runtime?.lastSummary ?? runtime?.lastResult ?? runtime?.blockedReason ?? runtime?.currentTask ?? member.lastSessionTitle ?? `Ready in ${member.role || 'worker'} lane`
-        const state = (runtime?.phase || runtime?.currentTask || '').toLowerCase()
-        const tone: 'idle' | 'active' | 'warning' = runtime?.blockedReason
+        const state = `${runtime?.assignmentState ?? ''} ${runtime?.dispatchState ?? ''} ${runtime?.phase || runtime?.currentTask || ''}`.toLowerCase()
+        const tone: 'idle' | 'active' | 'warning' = runtime?.blockedReason || runtime?.assignmentBlocker || runtime?.assignmentStaleReason || state.includes('stale') || state.includes('blocked')
           ? 'warning'
-          : (state.includes('review') || state.includes('write') || state.includes('build') || state.includes('implement') || state.includes('active'))
+          : (state.includes('review') || state.includes('write') || state.includes('build') || state.includes('implement') || state.includes('active') || state.includes('executing'))
             ? 'active'
             : 'idle'
         return {

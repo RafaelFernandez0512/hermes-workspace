@@ -64,6 +64,28 @@ const themeScript = `
 (() => {
   window.process = window.process || { env: {}, platform: 'browser' };
 
+  // Polyfill navigator.clipboard for non-secure contexts (HTTP localhost, Electron)
+  // so Monaco Editor doesn't crash when the clipboard API is unavailable.
+  try {
+    if (typeof navigator !== 'undefined' && !navigator.clipboard) {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          write: async () => {},
+          writeText: async (text) => {
+            try {
+              const ta = document.createElement('textarea');
+              ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+              document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+            } catch {}
+          },
+          read: async () => [],
+          readText: async () => '',
+        },
+      });
+    }
+  } catch {}
+
   try {
     const root = document.documentElement
     const storedTheme = localStorage.getItem('${THEME_STORAGE_KEY}')

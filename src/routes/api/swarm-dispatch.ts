@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { isAuthenticated } from '../../server/auth-middleware'
 import { newestCheckpointFromMessages, parseSwarmCheckpoint, type ParsedSwarmCheckpoint } from '../../server/swarm-checkpoints'
 import { readWorkerMessages } from '../../server/swarm-chat-reader'
-import { createOrUpdateMission, getSwarmMission, markMissionAssignmentDispatched, recordMissionAssignmentBlocked, recordMissionCheckpoint } from '../../server/swarm-missions'
+import { createOrUpdateMission, getSwarmMission, listSwarmMissions, markMissionAssignmentDispatched, recordMissionAssignmentBlocked, recordMissionAssignmentStale, recordMissionCheckpoint, readyQueuedAssignments, reconcileSwarmMissions, startMissionDispatchRun, touchMissionAssignmentHeartbeat } from '../../server/swarm-missions'
 import { appendSwarmMemoryEvent, buildSwarmStartupSnapshot } from '../../server/swarm-memory'
 import { rosterByWorkerId, type SwarmRosterWorker } from '../../server/swarm-roster'
 import { publishSwarmCheckpointNotification } from '../../server/swarm-notifications'
@@ -111,35 +111,20 @@ function validateWorkerId(workerId: string): boolean {
 }
 
 const TMUX_BIN_CANDIDATES = [
+  process.env.HERMES_TMUX_BIN,
+  process.env.CLAUDE_TMUX_BIN,
   process.env.TMUX_BIN,
-  '/opt/homebrew/bin/tmux',
-  '/usr/local/bin/tmux',
-  '/usr/bin/tmux',
   join(homedir(), '.local', 'bin', 'tmux'),
+  '/usr/bin/tmux',
+  '/usr/local/bin/tmux',
+  '/opt/homebrew/bin/tmux',
   'tmux',
 ].filter((value): value is string => Boolean(value))
 
 function resolveTmuxBin(): string | null {
-  // Allow operators on non-standard installs (Docker, NixOS, custom
-  // package layouts) to point Swarm at the right tmux binary without
-  // patching this list. See #244.
-  const override = process.env.HERMES_TMUX_BIN || process.env.CLAUDE_TMUX_BIN
-  if (override) {
-    if (existsSync(override)) return override
-    // If the override looks like a bare command (no slashes), trust it
-    // and let execFile resolve it via PATH.
-    if (!override.includes('/')) return override
-  }
   for (const candidate of TMUX_BIN_CANDIDATES) {
     if (candidate.includes('/')) {
-      if (
-        candidate === process.env.TMUX_BIN ||
-        candidate === '/opt/homebrew/bin/tmux' ||
-        candidate === '/usr/local/bin/tmux' ||
-        existsSync(candidate)
-      ) {
-        return candidate
-      }
+      if (existsSync(candidate)) return candidate
       continue
     }
     return candidate
@@ -183,6 +168,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+const DISPATCH_SWEEP_INTERVAL_MS = 5_000
+const activeDispatchMissionIds = new Set<string>()
+let dispatchSweepStarted = false
+
 function sessionNameFor(workerId: string): string {
   return `swarm-${workerId}`
 }
@@ -202,18 +191,21 @@ export function buildHermesTmuxLaunchCommand(input: {
   hermesBin: string
   ghToken?: string | null
 }): string {
-  const launchPrefix = [
+  const envPairs = [
     `HERMES_HOME='${shellEscapeSingle(input.profilePath)}'`,
     `HERMES_CLI_BIN='${shellEscapeSingle(input.hermesBin)}'`,
     input.ghToken ? `GH_TOKEN='${shellEscapeSingle(input.ghToken)}'` : '',
     input.ghToken ? `GITHUB_TOKEN='${shellEscapeSingle(input.ghToken)}'` : '',
   ].filter(Boolean).join(' ')
-  const hermesBin = shellEscapeSingle(input.hermesBin)
 
-  // Do not exec the Hermes process. Keeping the parent shell alive means a
-  // failed worker startup leaves a readable tmux pane instead of destroying the
-  // session and turning the real error into "can't find pane".
-  return `${launchPrefix} '${hermesBin}' chat --tui; status=$?; printf '\n[Hermes worker exited with status %s]\n' "$status"`
+  // Use `env VAR=val bash -c '...'` so the command runs under bash regardless
+  // of the tmux pane's default shell (fish, zsh, etc.). The inline `VAR=val cmd`
+  // and `status=$?` syntax are bash-specific and fail in fish.
+  // `env` is an external command — all shells pass the quoted values to it
+  // correctly. Inside the bash -c body, $HERMES_CLI_BIN is inherited from env.
+  // Force the classic CLI: the TUI can fail its npm install/bootstrap in worker
+  // profiles on this host, while the CLI is stable for persistent sessions.
+  return `env ${envPairs} bash -c '$HERMES_CLI_BIN chat --cli; rc=$?; printf "\\n[Hermes worker exited with status %s]\\n" "$rc"'`
 }
 
 function parseAssignments(value: unknown): Array<AssignmentRequest> {
@@ -502,6 +494,72 @@ function markDispatchResult(workerId: string, result: WorkerResult): void {
   })
 }
 
+export function syntheticCheckpointFromWorkerResult(result: WorkerResult): ParsedSwarmCheckpoint | null {
+  if (!result.ok) return null
+  const parsed = parseSwarmCheckpoint(result.output)
+  if (parsed) return parsed
+
+  const summary = cleanRuntimeText(result.output)
+  if (!summary) return null
+
+  return {
+    raw: [
+      'STATE: DONE',
+      'FILES_CHANGED: none',
+      'COMMANDS_RUN: none',
+      `RESULT: ${summary}`,
+      'BLOCKER: none',
+      'NEXT_ACTION: Wait for the next assignment.',
+    ].join('\n'),
+    stateLabel: 'DONE',
+    checkpointStatus: 'done',
+    runtimeState: 'idle',
+    filesChanged: 'none',
+    commandsRun: 'none',
+    result: summary,
+    blocker: 'none',
+    nextAction: 'Wait for the next assignment.',
+  }
+}
+
+function finalizeCompletedOneShot(workerId: string, assignment: AssignmentRequest, result: WorkerResult, options?: { missionId?: string | null, notifySessionKey?: string | null }): void {
+  const checkpoint = syntheticCheckpointFromWorkerResult(result)
+  if (!checkpoint) return
+
+  markCheckpointResult(workerId, checkpoint, options?.notifySessionKey ?? 'main')
+  recordMissionCheckpoint({
+    missionId: options?.missionId,
+    assignmentId: assignment.assignmentId ?? null,
+    workerId,
+    checkpoint,
+    source: 'swarm-dispatch-oneshot',
+  })
+  appendSwarmMemoryEvent({
+    workerId,
+    missionId: options?.missionId ?? null,
+    assignmentId: assignment.assignmentId ?? null,
+    type: 'checkpoint',
+    summary: checkpoint.result ?? `Checkpoint ${checkpoint.stateLabel}`,
+    checkpoint,
+    event: {
+      stateLabel: checkpoint.stateLabel,
+      filesChanged: checkpoint.filesChanged,
+      commandsRun: checkpoint.commandsRun,
+      blocker: checkpoint.blocker,
+      nextAction: checkpoint.nextAction,
+    },
+  })
+  publishSwarmCheckpointNotification({
+    workerId,
+    missionId: options?.missionId ?? null,
+    assignmentId: assignment.assignmentId ?? null,
+    checkpoint,
+    notifySessionKey: options?.notifySessionKey ?? 'main',
+  })
+  result.checkpoint = checkpoint
+  result.checkpointStatus = 'checkpointed'
+}
+
 export function dispatchBlockReason(result: Pick<WorkerResult, 'ok' | 'error' | 'output' | 'checkpointStatus'>): string | null {
   if (!result.ok) return result.error?.trim() || result.output?.trim() || 'Dispatch failed before a worker checkpoint was recorded.'
   if (result.checkpointStatus === 'timeout') return 'No fresh checkpoint before poll timeout.'
@@ -580,6 +638,24 @@ async function waitForFreshCheckpoint(
       if (checkpoint && checkpoint.raw !== previousRaw) return checkpoint
     }
     await sleep(2_000)
+  }
+  return null
+}
+
+function readFreshCheckpointOnce(workerId: string, previousRaw: string | null, _baselineRuntimeSignature: string, dispatchedAt: number): ParsedSwarmCheckpoint | null {
+  const profilePath = getProfilePath(workerId)
+  const runtimeSnapshot = readRuntimeCheckpointSnapshot(profilePath)
+  const checkInAt = runtimeSnapshot.lastCheckIn ? Date.parse(runtimeSnapshot.lastCheckIn) : null
+  const outputAt = runtimeSnapshot.lastOutputAt
+  if ((typeof outputAt === 'number' && outputAt >= dispatchedAt) || (typeof checkInAt === 'number' && checkInAt >= dispatchedAt)) {
+    const runtimeCheckpoint = checkpointFromRuntimeSnapshot(runtimeSnapshot)
+    if (runtimeCheckpoint && runtimeCheckpoint.raw !== previousRaw) return runtimeCheckpoint
+  }
+
+  const chat = readWorkerMessages(profilePath, 50)
+  if (chat.ok) {
+    const checkpoint = newestCheckpointFromMessages(chat.messages)
+    if (checkpoint && checkpoint.raw !== previousRaw) return checkpoint
   }
   return null
 }
@@ -784,6 +860,42 @@ async function sendPromptToLiveSession(workerId: string, prompt: string): Promis
   }
 }
 
+function launchDetachedOneShot(workerId: string, prompt: string, timeoutMs: number, profilePath: string, wrapperPath: string): WorkerResult {
+  const startedAt = Date.now()
+  const cmd = existsSync(wrapperPath) ? wrapperPath : resolveHermesBin()
+  const args = buildHermesChatQueryArgs(prompt)
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    HERMES_HOME: profilePath,
+  }
+  const ghToken = resolveGithubToken()
+  if (ghToken) {
+    env.GH_TOKEN = ghToken
+    env.GITHUB_TOKEN = ghToken
+  }
+
+  const child = execFile(cmd, args, {
+    env,
+    cwd: homedir(),
+    timeout: timeoutMs,
+    maxBuffer: MAX_OUTPUT_CHARS,
+    detached: true,
+    stdio: 'ignore',
+  })
+  child.unref()
+
+  return {
+    workerId,
+    ok: true,
+    output: `Launched detached one-shot dispatch via ${existsSync(wrapperPath) ? 'wrapper' : 'hermes'} for background execution.`,
+    error: null,
+    durationMs: Date.now() - startedAt,
+    exitCode: 0,
+    delivery: 'oneshot',
+    checkpointStatus: 'not-requested',
+  }
+}
+
 export function buildHermesChatQueryArgs(prompt: string): string[] {
   // `hermes chat -q` requires the query as the *immediate* next argv item.
   // Keeping the prompt adjacent to -q prevents argparse from interpreting
@@ -792,7 +904,7 @@ export function buildHermesChatQueryArgs(prompt: string): string[] {
   return ['chat', '-q', prompt, '-Q', '--yolo', '--ignore-rules', '--source', 'swarm-dispatch']
 }
 
-function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: SwarmRosterWorker | undefined, options?: { waitForCheckpoint?: boolean; checkpointPollMs?: number; missionId?: string | null; notifySessionKey?: string | null }): Promise<WorkerResult> {
+function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: SwarmRosterWorker | undefined, options?: { waitForCheckpoint?: boolean; checkpointPollMs?: number; missionId?: string | null; notifySessionKey?: string | null; asyncDispatch?: boolean }): Promise<WorkerResult> {
   return new Promise(async (resolve) => {
     const workerId = assignment.workerId
     const prompt = buildWorkerPrompt({
@@ -834,8 +946,60 @@ function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: Swa
     const startedAt = Date.now()
     const wrapperPath = getWrapperPath(workerId)
 
-    // Prefer the persistent live agent session when available/startable.
-    const liveResult = await sendPromptToLiveSession(workerId, prompt)
+    if (options?.asyncDispatch) {
+      if (!existsSync(profilePath)) {
+        const result: WorkerResult = {
+          workerId,
+          ok: false,
+          output: '',
+          error: `Profile not found at ${profilePath}`,
+          durationMs: Date.now() - startedAt,
+          exitCode: null,
+          delivery: 'oneshot',
+        }
+        markDispatchResult(workerId, result)
+        recordDispatchBlock(workerId, assignment, result, options)
+        resolve(result)
+        return
+      }
+      const asyncResult = assignment.direct === true
+        ? await sendPromptToLiveSession(workerId, prompt)
+        : launchDetachedOneShot(workerId, prompt, timeoutMs, profilePath, wrapperPath)
+      if (!asyncResult) {
+        const result: WorkerResult = {
+          workerId,
+          ok: false,
+          output: '',
+          error: 'Failed to launch async dispatch',
+          durationMs: Date.now() - startedAt,
+          exitCode: null,
+          delivery: assignment.direct === true ? 'tmux' : 'oneshot',
+        }
+        markDispatchResult(workerId, result)
+        resolve(result)
+        return
+      }
+      markDispatchResult(workerId, asyncResult)
+      if (!asyncResult.ok) {
+        recordDispatchBlock(workerId, assignment, asyncResult, options)
+      } else {
+        touchMissionAssignmentHeartbeat({
+          missionId: options?.missionId ?? null,
+          assignmentId: assignment.assignmentId ?? null,
+          workerId,
+          heartbeatAt: Date.now(),
+          outputAt: Date.now(),
+        })
+      }
+      resolve(asyncResult)
+      return
+    }
+
+    // Only direct/manual dispatch should inject text into a persistent tmux
+    // session. Structured swarm assignments use one-shot `chat -q` below so the
+    // multiline checkpoint contract is delivered as a single argv payload rather
+    // than being fragmented/interrupted by the interactive CLI/TUI prompt.
+    const liveResult = assignment.direct === true ? await sendPromptToLiveSession(workerId, prompt) : null
     if (liveResult) {
       markDispatchResult(workerId, liveResult)
       if (options?.waitForCheckpoint && liveResult.ok) {
@@ -1020,6 +1184,9 @@ function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: Swa
           result.checkpointStatus = 'not-requested'
         }
         markDispatchResult(workerId, result)
+        if (!options?.waitForCheckpoint && result.ok && result.delivery === 'oneshot') {
+          finalizeCompletedOneShot(workerId, assignment, result, options)
+        }
         recordDispatchBlock(workerId, assignment, result, options)
         resolve(result)
       },
@@ -1041,6 +1208,162 @@ function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: Swa
     })
   })
 }
+
+async function processMissionDispatchCycle(
+  missionId: string,
+  options: { timeoutMs: number; checkpointPollMs: number; notifySessionKey: string; asyncDispatch: boolean },
+): Promise<{ started: number; checkpointed: number; stale: number; blocked: number }> {
+  if (activeDispatchMissionIds.has(missionId)) {
+    return { started: 0, checkpointed: 0, stale: 0, blocked: 0 }
+  }
+  activeDispatchMissionIds.add(missionId)
+  try {
+    const mission = getSwarmMission(missionId)
+    if (!mission || mission.state === 'cancelled' || mission.state === 'complete') {
+      return { started: 0, checkpointed: 0, stale: 0, blocked: 0 }
+    }
+    if (!mission.runId) {
+      startMissionDispatchRun({ missionId, reason: 'Recovered dispatch run' })
+    }
+
+    const roster = rosterByWorkerId(mission.assignments.map((assignment) => assignment.workerId))
+    const ready = readyQueuedAssignments(missionId)
+    let started = 0
+    let checkpointed = 0
+    let stale = 0
+    let blocked = 0
+
+  if (ready.length > 0) {
+    started += ready.length
+    await Promise.all(ready.map((assignment) => runWorker(
+      assignment,
+      options.timeoutMs,
+      roster.get(assignment.workerId),
+      {
+        waitForCheckpoint: false,
+        checkpointPollMs: options.checkpointPollMs,
+        missionId,
+        notifySessionKey: options.notifySessionKey,
+        asyncDispatch: options.asyncDispatch,
+      },
+    )))
+  }
+
+  const refreshed = getSwarmMission(missionId)
+  if (!refreshed) return { started, checkpointed, stale, blocked }
+  const nowAt = Date.now()
+  for (const assignment of refreshed.assignments) {
+    if (assignment.state !== 'dispatched' && assignment.state !== 'executing') continue
+
+    const profilePath = getProfilePath(assignment.workerId)
+    const runtimeSnapshot = readRuntimeCheckpointSnapshot(profilePath)
+    const heartbeatAt = runtimeSnapshot.lastOutputAt ?? (runtimeSnapshot.lastCheckIn ? Date.parse(runtimeSnapshot.lastCheckIn) : null)
+    if (typeof heartbeatAt === 'number' && Number.isFinite(heartbeatAt)) {
+      touchMissionAssignmentHeartbeat({
+        missionId,
+        assignmentId: assignment.id,
+        workerId: assignment.workerId,
+        heartbeatAt,
+        outputAt: runtimeSnapshot.lastOutputAt ?? null,
+      })
+    }
+
+    const checkpoint = readFreshCheckpointOnce(assignment.workerId, assignment.checkpoint?.raw ?? null, '', assignment.dispatchedAt ?? nowAt)
+    if (checkpoint) {
+      markCheckpointResult(assignment.workerId, checkpoint, options.notifySessionKey)
+      recordMissionCheckpoint({
+        missionId,
+        assignmentId: assignment.id,
+        workerId: assignment.workerId,
+        checkpoint,
+        source: 'swarm-dispatch-sweep',
+      })
+      appendSwarmMemoryEvent({
+        workerId: assignment.workerId,
+        missionId,
+        assignmentId: assignment.id,
+        type: 'checkpoint',
+        summary: checkpoint.result ?? `Checkpoint ${checkpoint.stateLabel}`,
+        checkpoint,
+        event: {
+          stateLabel: checkpoint.stateLabel,
+          filesChanged: checkpoint.filesChanged,
+          commandsRun: checkpoint.commandsRun,
+          blocker: checkpoint.blocker,
+          nextAction: checkpoint.nextAction,
+        },
+      })
+      publishSwarmCheckpointNotification({
+        workerId: assignment.workerId,
+        missionId,
+        assignmentId: assignment.id,
+        checkpoint,
+        notifySessionKey: options.notifySessionKey,
+      })
+      checkpointed += 1
+      continue
+    }
+
+    if (runtimeSnapshot.blockedReason || runtimeSnapshot.checkpointStatus === 'blocked' || runtimeSnapshot.checkpointStatus === 'needs_input' || runtimeSnapshot.needsHuman) {
+      const reason = runtimeSnapshot.blockedReason ?? 'Worker reported blocked.'
+      recordMissionAssignmentBlocked({
+        missionId,
+        assignmentId: assignment.id,
+        workerId: assignment.workerId,
+        reason,
+        source: 'swarm-dispatch-sweep',
+      })
+      blocked += 1
+      continue
+    }
+
+    const ageMs = typeof heartbeatAt === 'number' && Number.isFinite(heartbeatAt) ? nowAt - heartbeatAt : Number.POSITIVE_INFINITY
+    if (ageMs > Math.max(options.checkpointPollMs, 60_000)) {
+      recordMissionAssignmentStale({
+        missionId,
+        assignmentId: assignment.id,
+        workerId: assignment.workerId,
+        reason: 'No fresh heartbeat observed during async dispatch sweep.',
+        source: 'swarm-dispatch-sweep',
+      })
+      stale += 1
+      continue
+    }
+  }
+
+    return { started, checkpointed, stale, blocked }
+  } finally {
+    activeDispatchMissionIds.delete(missionId)
+  }
+}
+
+function ensureDispatchSweepStarted(): void {
+  if (dispatchSweepStarted) return
+  dispatchSweepStarted = true
+  const tick = () => {
+    void (async () => {
+      try {
+        reconcileSwarmMissions()
+        const missions = listSwarmMissions(100).filter((mission) => mission.state !== 'complete' && mission.state !== 'cancelled')
+        for (const mission of missions) {
+          await processMissionDispatchCycle(mission.id, {
+            timeoutMs: DEFAULT_TIMEOUT_S * 1000,
+            checkpointPollMs: 30_000,
+            notifySessionKey: 'main',
+            asyncDispatch: true,
+          })
+        }
+      } catch {
+        /* best effort */
+      }
+    })()
+  }
+  const interval = setInterval(tick, DISPATCH_SWEEP_INTERVAL_MS)
+  interval.unref()
+  void tick()
+}
+
+ensureDispatchSweepStarted()
 
 export class SwarmDispatchError extends Error {
   status: number
@@ -1122,14 +1445,98 @@ export async function dispatchSwarmAssignments(body: DispatchRequest) {
     assignmentId: assignmentIdByKey.get(`${assignment.workerId}\n${assignment.task}`),
   }))
 
+  const asyncDispatch = body.allowAsync !== false
+  if (asyncDispatch) {
+    startMissionDispatchRun({ missionId: mission.id, reason: 'Async dispatch accepted' })
+    const summary = await processMissionDispatchCycle(mission.id, {
+      timeoutMs,
+      checkpointPollMs: checkpointPollSeconds * 1000,
+      notifySessionKey,
+      asyncDispatch: true,
+    })
+    const latestMission = getSwarmMission(mission.id) ?? mission
+    return {
+      ok: true,
+      accepted: true,
+      dispatchedAt: Date.now(),
+      missionId: latestMission.id,
+      runId: latestMission.runId,
+      mission: latestMission,
+      prompt: assignments.length === 1 ? assignments[0].task : `${assignments.length} assigned tasks`,
+      assignments,
+      timeoutSeconds,
+      waitForCheckpoint: false,
+      checkpointPollSeconds,
+      notifySessionKey,
+      summary,
+    }
+  }
+
   const dispatchedAt = Date.now()
   const roster = rosterByWorkerId(assignments.map((assignment) => assignment.workerId))
-  const results = await Promise.all(assignments.map((assignment) => runWorker(
-    assignment,
-    timeoutMs,
-    roster.get(assignment.workerId),
-    { waitForCheckpoint, checkpointPollMs: checkpointPollSeconds * 1000, missionId: mission.id, notifySessionKey },
-  )))
+  const results: WorkerResult[] = []
+  const completedWorkerIds = new Set<string>()
+  const pending = [...assignments]
+  const hasDependencies = assignments.some((assignment) => (assignment.dependsOn?.length ?? 0) > 0)
+
+  while (pending.length > 0) {
+    const ready = hasDependencies
+      ? pending.filter((assignment) => (assignment.dependsOn ?? []).every((dep) => completedWorkerIds.has(dep)))
+      : pending.splice(0, pending.length)
+
+    if (hasDependencies && ready.length === 0) {
+      for (const assignment of pending.splice(0, pending.length)) {
+        const blocked: WorkerResult = {
+          workerId: assignment.workerId,
+          ok: false,
+          output: '',
+          error: `Dependency cycle or unmet dependency: ${(assignment.dependsOn ?? []).join(', ') || 'unknown'}`,
+          durationMs: 0,
+          exitCode: null,
+          delivery: 'oneshot',
+          checkpointStatus: 'timeout',
+        }
+        markDispatchResult(assignment.workerId, blocked)
+        recordDispatchBlock(assignment.workerId, assignment, blocked, { waitForCheckpoint, checkpointPollMs: checkpointPollSeconds * 1000, missionId: mission.id, notifySessionKey })
+        results.push(blocked)
+      }
+      break
+    }
+
+    if (hasDependencies) {
+      for (const assignment of ready) pending.splice(pending.indexOf(assignment), 1)
+    }
+
+    const batchResults = await Promise.all(ready.map((assignment) => runWorker(
+      assignment,
+      timeoutMs,
+      roster.get(assignment.workerId),
+      { waitForCheckpoint, checkpointPollMs: checkpointPollSeconds * 1000, missionId: mission.id, notifySessionKey },
+    )))
+    results.push(...batchResults)
+
+    const failed = batchResults.find((result) => !result.ok || result.checkpointStatus === 'timeout' || result.checkpoint?.checkpointStatus === 'blocked')
+    if (failed) {
+      for (const assignment of pending.splice(0, pending.length)) {
+        const blocked: WorkerResult = {
+          workerId: assignment.workerId,
+          ok: false,
+          output: '',
+          error: `Skipped because dependency ${failed.workerId} did not complete successfully.`,
+          durationMs: 0,
+          exitCode: null,
+          delivery: 'oneshot',
+          checkpointStatus: 'timeout',
+        }
+        markDispatchResult(assignment.workerId, blocked)
+        recordDispatchBlock(assignment.workerId, assignment, blocked, { waitForCheckpoint, checkpointPollMs: checkpointPollSeconds * 1000, missionId: mission.id, notifySessionKey })
+        results.push(blocked)
+      }
+      break
+    }
+
+    for (const result of batchResults) completedWorkerIds.add(result.workerId)
+  }
 
   const latestMission = getSwarmMission(mission.id) ?? mission
 

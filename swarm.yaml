@@ -352,6 +352,114 @@ workers:
   mcpServers:
   - gbrain
   wrapper: ops:health
+- id: infrastructure-agent
+  name: Infrastructure Agent
+  role: Infrastructure / Networking / Virtualization
+  specialty: Docker, VMs, libvirt, networking, Tailscale, VPN, firewall, service reachability
+  model: GPT-5.4-mini
+  mission: Diagnose and improve local infrastructure safely with concrete evidence, minimal blast radius, and clear rollback notes.
+  profile: infrastructure-agent
+  modes:
+  - health
+  - task
+  tools:
+  - terminal
+  - file
+  - web
+  - gbrain
+  - session_search
+  - skills
+  - todo
+  skills:
+  - gstack-for-hermes
+  - gbrain
+  - systematic-debugging
+  - hermes-agent
+  capabilities:
+  - infrastructure
+  - networking
+  - virtualization
+  - docker
+  - tailscale
+  - vpn
+  - firewall
+  - diagnostics
+  defaultCwd: /home/winterfell
+  preferredTaskTypes:
+  - infrastructure
+  - networking
+  - virtualization
+  - docker
+  - vpn
+  - diagnostics
+  - host-admin
+  greenlightRequiredFor:
+  - restart-service
+  - destructive
+  - config-change
+  - credential-change
+  - firewall-change
+  maxConcurrentTasks: 1
+  acceptsBroadcast: true
+  plugins: []
+  pluginToolsets: []
+  mcpServers:
+  - gbrain
+  wrapper: infrastructure-agent:task
+- id: system-operator
+  name: System Operator
+  role: OS / Services / Desktop Integration
+  specialty: packages, systemd, services, CachyOS, Omarchy, Hyprland, users, filesystems, workstation health
+  model: GPT-5.4-mini
+  mission: Operate the winterfell host safely with concrete evidence, minimal blast radius, and rollback-aware system changes.
+  profile: system-operator
+  modes:
+  - health
+  - task
+  tools:
+  - terminal
+  - file
+  - web
+  - gbrain
+  - session_search
+  - skills
+  - todo
+  skills:
+  - gstack-for-hermes
+  - gbrain
+  - systematic-debugging
+  - hermes-agent
+  capabilities:
+  - os-admin
+  - packages
+  - services
+  - systemd
+  - desktop-integration
+  - hyprland
+  - omarchy
+  - diagnostics
+  defaultCwd: /home/winterfell
+  preferredTaskTypes:
+  - os-admin
+  - packages
+  - services
+  - systemd
+  - desktop
+  - diagnostics
+  - host-admin
+  greenlightRequiredFor:
+  - restart-service
+  - destructive
+  - config-change
+  - credential-change
+  - package-remove
+  maxConcurrentTasks: 1
+  acceptsBroadcast: true
+  plugins: []
+  pluginToolsets: []
+  mcpServers:
+  - gbrain
+  wrapper: system-operator:task
 - id: maintainer
   name: Maintainer
   role: Upstream Dependency / Patch Hygiene
@@ -496,3 +604,256 @@ workers:
   mcpServers:
   - gbrain
   wrapper: inbox:triage
+- id: InvoiceUploader
+  name: InvoiceUploader
+  role: Workspace Orchestrator / Facturación ERP
+  specialty: coordinación segura de requerimientos, análisis, implementación, validación y documentación para InvoiceUploader
+  model: GPT-5.4-mini
+  mission: Orquestar cambios en el flujo de carga, aprobación, auditoría y exportación de facturas sin romper datos, permisos, jobs ni ERP.
+  profile: InvoiceUploader
+  modes:
+  - plan
+  tools:
+  - todo
+  - kanban
+  - delegation
+  - terminal
+  - file
+  - gbrain
+  - session_search
+  - skills
+  - clarify
+  - web
+  skills:
+  - kanban-orchestrator
+  - workspace-dispatch
+  capabilities:
+  - orchestration
+  - requirements-routing
+  - impact-triage
+  - proof-contracts
+  - greenlight-gate
+  defaultCwd: /home/winterfell/src/InvoiceUploader
+  preferredTaskTypes:
+  - orchestration
+  - planning
+  - routing
+  - coordination
+  - handoff
+  greenlightRequiredFor:
+  - destructive
+  - credential-change
+  - schema-change
+  - rls-change
+  - production-job-change
+  - irreversible-export-change
+  maxConcurrentTasks: 1
+  acceptsBroadcast: true
+  plugins: []
+  pluginToolsets: []
+  mcpServers:
+  - gbrain
+  wrapper: InvoiceUploader:plan
+- id: invoiceuploader-spec
+  name: InvoiceUploader Spec
+  role: Requirements / Bug Spec
+  specialty: definición de requerimientos, bugs, alcance, criterios de aceptación y riesgos de negocio
+  model: GPT-5.4-mini
+  mission: Convertir solicitudes ambiguas en especificaciones accionables y seguras para el flujo de facturas.
+  profile: invoiceuploader-spec
+  modes:
+  - task
+  tools:
+  - file
+  - terminal
+  - session_search
+  - skills
+  - todo
+  - clarify
+  skills:
+  - plan
+  capabilities:
+  - requirements
+  - bug-specification
+  - acceptance-criteria
+  - risk-framing
+  defaultCwd: /home/winterfell/src/InvoiceUploader
+  preferredTaskTypes:
+  - requirements
+  - bug-definition
+  - acceptance-criteria
+  - scope
+  greenlightRequiredFor:
+  - external-send
+  maxConcurrentTasks: 1
+  acceptsBroadcast: true
+  plugins: []
+  pluginToolsets: []
+  mcpServers: []
+  wrapper: invoiceuploader-spec:task
+- id: invoiceuploader-tech
+  name: InvoiceUploader Tech
+  role: Technical Analysis
+  specialty: análisis de impacto entre React, Supabase, PostgreSQL, .NET, Hangfire, OAuth y Business Central
+  model: GPT-5.4-mini
+  mission: Investigar arquitectura, causa raíz e impactos técnicos antes de implementar cambios.
+  profile: invoiceuploader-tech
+  modes:
+  - task
+  tools:
+  - terminal
+  - file
+  - web
+  - session_search
+  - skills
+  - todo
+  skills:
+  - codebase-inspection
+  - systematic-debugging
+  capabilities:
+  - codebase-analysis
+  - root-cause-analysis
+  - integration-impact
+  - architecture-review
+  defaultCwd: /home/winterfell/src/InvoiceUploader
+  preferredTaskTypes:
+  - analysis
+  - diagnostics
+  - architecture
+  - integration
+  greenlightRequiredFor:
+  - credential-change
+  - schema-change
+  - rls-change
+  maxConcurrentTasks: 1
+  acceptsBroadcast: true
+  plugins: []
+  pluginToolsets: []
+  mcpServers: []
+  wrapper: invoiceuploader-tech:task
+- id: invoiceuploader-coder
+  name: InvoiceUploader Coder
+  role: Scoped Implementation
+  specialty: implementación full-stack acotada con TypeScript, React, Supabase y .NET
+  model: GPT-5.4-mini
+  mission: Implementar cambios mínimos y reversibles con validación del frontend/backend afectado.
+  profile: invoiceuploader-coder
+  modes:
+  - task
+  tools:
+  - terminal
+  - file
+  - session_search
+  - skills
+  - todo
+  skills:
+  - codebase-inspection
+  - systematic-debugging
+  - test-driven-development
+  capabilities:
+  - implementation
+  - bugfix
+  - frontend
+  - backend
+  - build-verification
+  defaultCwd: /home/winterfell/src/InvoiceUploader
+  preferredTaskTypes:
+  - implementation
+  - bugfix
+  - feature
+  - refactor
+  greenlightRequiredFor:
+  - destructive
+  - credential-change
+  - schema-change
+  - rls-change
+  - production-job-change
+  - irreversible-export-change
+  maxConcurrentTasks: 1
+  acceptsBroadcast: true
+  plugins: []
+  pluginToolsets: []
+  mcpServers: []
+  wrapper: invoiceuploader-coder:task
+- id: invoiceuploader-validator
+  name: InvoiceUploader Validator
+  role: Validation / Smoke QA
+  specialty: React + Vite builds, smoke checks, regression review and user-visible workflow validation
+  model: GPT-5.4-mini
+  mission: Verificar cambios con evidencia concreta; en frontend ejecutar build React + Vite para detectar errores y reportar fallos o validación insuficiente para corrección por coder antes de cerrar trabajo.
+  profile: invoiceuploader-validator
+  modes:
+  - smoke
+  tools:
+  - browser
+  - terminal
+  - file
+  - vision
+  - session_search
+  - skills
+  skills:
+  - browser-harness-power-use
+  - systematic-debugging
+  capabilities:
+  - validation
+  - browser-qa
+  - smoke-testing
+  - regression-check
+  - build-verification
+  - react-vite-validation
+  - validation-gap-reporting
+  defaultCwd: /home/winterfell/src/InvoiceUploader
+  preferredTaskTypes:
+  - qa
+  - validation
+  - smoke
+  - regression
+  greenlightRequiredFor:
+  - destructive
+  - external-write
+  maxConcurrentTasks: 1
+  acceptsBroadcast: true
+  plugins: []
+  pluginToolsets: []
+  mcpServers: []
+  wrapper: invoiceuploader-validator:smoke
+- id: invoiceuploader-writer
+  name: InvoiceUploader Writer
+  role: Decisions / Change Log / Memory
+  specialty: documentación de decisiones, cambios, validación, rollback y conocimiento durable sin secretos
+  model: GPT-5.4-mini
+  mission: Guardar decisiones y cambios relevantes de InvoiceUploader de forma trazable y segura.
+  profile: invoiceuploader-writer
+  modes:
+  - note
+  tools:
+  - gbrain
+  - file
+  - terminal
+  - session_search
+  - skills
+  - todo
+  skills:
+  - gbrain
+  capabilities:
+  - documentation
+  - decision-records
+  - change-log
+  - memory-capture
+  defaultCwd: /home/winterfell/src/InvoiceUploader
+  preferredTaskTypes:
+  - documentation
+  - decision
+  - changelog
+  - memory
+  greenlightRequiredFor:
+  - publish
+  - external-send
+  - secret-adjacent-change
+  maxConcurrentTasks: 1
+  acceptsBroadcast: true
+  plugins: []
+  pluginToolsets: []
+  mcpServers:
+  - gbrain
+  wrapper: invoiceuploader-writer:note

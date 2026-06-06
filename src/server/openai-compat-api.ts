@@ -129,6 +129,7 @@ export async function buildRequestBody(
 
 export type StreamChunkType =
   | { type: 'content' | 'reasoning'; text: string }
+  | { type: 'meta'; model?: string }
   | {
       type: 'tool'
       name: string
@@ -194,6 +195,7 @@ function parseClaudeToolProgressChunk(payload: string): StreamChunkType | null {
 export async function* parseOpenAIStream(
   response: Response,
 ): AsyncGenerator<StreamChunkType, void, void> {
+  let announcedModel = ''
   const reader = response.body?.getReader()
   if (!reader) {
     throw new Error('No response body')
@@ -248,6 +250,11 @@ export async function* parseOpenAIStream(
                 reasoning_content?: string | null
               }
             }>
+          }
+          const model = readString((parsed as Record<string, unknown>).model)
+          if (model && model !== announcedModel) {
+            announcedModel = model
+            yield { type: 'meta' as const, model }
           }
           const d = parsed.choices?.[0]?.delta
           const content = d?.content || ''

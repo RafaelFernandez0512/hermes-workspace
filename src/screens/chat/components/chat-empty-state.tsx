@@ -2,6 +2,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { BrainIcon, CodeIcon, PuzzleIcon } from '@hugeicons/core-free-icons'
 import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
+import { formatModelName } from '@/lib/format-model-name'
 
 type ProfileSummary = {
   name: string
@@ -38,11 +39,13 @@ const SUGGESTIONS: Array<SuggestionChip> = [
 type ChatEmptyStateProps = {
   onSuggestionClick?: (prompt: string) => void
   compact?: boolean
+  model?: string
 }
 
 export function ChatEmptyState({
   onSuggestionClick,
   compact = false,
+  model,
 }: ChatEmptyStateProps) {
   const [activeProfile, setActiveProfile] = useState<ProfileSummary | null>(null)
 
@@ -98,10 +101,26 @@ export function ChatEmptyState({
         </h2>
 
         {activeProfile && (
-          <span className="mt-2 text-xs" style={{ color: 'var(--theme-accent)' }}>
-            {activeProfile.name}
-            {activeProfile.model ? ` · ${activeProfile.model}` : ''}
-          </span>
+          <div
+            className="mt-2 flex flex-col items-center gap-1 text-xs"
+            style={{ color: 'var(--theme-accent)' }}
+          >
+            <span>{activeProfile.name}</span>
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px]">
+              {activeProfile.model ? (
+                <span>
+                  <span style={{ color: 'var(--theme-muted)' }}>Profile default:</span>{' '}
+                  {formatModelName(activeProfile.model)}
+                </span>
+              ) : null}
+              {model ? (
+                <span>
+                  <span style={{ color: 'var(--theme-muted)' }}>Current chat model:</span>{' '}
+                  {formatModelName(model)}
+                </span>
+              ) : null}
+            </div>
+          </div>
         )}
 
         {!compact && (

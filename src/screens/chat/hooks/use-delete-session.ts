@@ -9,6 +9,8 @@ import { clearPendingSendForSession, resetPendingSend } from '../pending-send'
 import { clearSessionDeleted, markSessionDeleted } from '../session-tombstones'
 import { readError } from '../utils'
 import { clearSessionTitleState } from '../session-title-store'
+import { toast } from '@/components/ui/toast'
+import { useSessionModelStore } from '@/stores/session-model-store'
 
 export type DeleteSessionResult = {
   deleteSession: (
@@ -22,6 +24,7 @@ export type DeleteSessionResult = {
 
 export function useDeleteSession(): DeleteSessionResult {
   const queryClient = useQueryClient()
+  const clearSessionModel = useSessionModelStore((s) => s.clearModel)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -68,13 +71,22 @@ export function useDeleteSession(): DeleteSessionResult {
         )
       }
       clearSessionDeleted(_payload.sessionKey || _payload.friendlyId)
-      setError(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      setError(message)
+      toast(message, { type: 'error' })
     },
     onSuccess: function onSuccess(payload) {
       if (payload.isActive) {
         resetPendingSend()
       }
       clearSessionTitleState(payload.friendlyId || payload.sessionKey)
+      if (payload.sessionKey && payload.sessionKey !== payload.friendlyId) {
+        clearSessionTitleState(payload.sessionKey)
+      }
+      clearSessionModel(payload.friendlyId || payload.sessionKey)
+      if (payload.sessionKey && payload.sessionKey !== payload.friendlyId) {
+        clearSessionModel(payload.sessionKey)
+      }
       queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
     },
     onSettled: function onSettled() {

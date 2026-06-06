@@ -13,13 +13,17 @@ import {
   toSessionSummary,
   updateSession,
 } from '../../server/claude-api'
-import { createCapabilityUnavailablePayload } from '@/lib/feature-gates'
 import {
   deleteLocalSession,
   getLocalSession,
   listLocalSessions,
   updateLocalSessionTitle,
 } from '../../server/local-session-store'
+import {
+  deletePersistedRunsForSession,
+  getActiveRunForSession,
+} from '../../server/run-store'
+import { createCapabilityUnavailablePayload } from '@/lib/feature-gates'
 
 export const Route = createFileRoute('/api/sessions')({
   server: {
@@ -276,10 +280,24 @@ export const Route = createFileRoute('/api/sessions')({
           )
         }
 
+        const activeRun = await getActiveRunForSession(sessionKey)
+        if (activeRun) {
+          return json(
+            {
+              ok: false,
+              error:
+                'This session still has an active run. Abandon or wait for the run to finish before deleting the session.',
+              runId: activeRun.runId,
+            },
+            { status: 409 },
+          )
+        }
+
         // Local sessions live in the workspace portable store, not the
         // gateway. Delete them locally without hitting the gateway.
         if (getLocalSession(sessionKey)) {
           deleteLocalSession(sessionKey)
+          await deletePersistedRunsForSession(sessionKey)
           return json({ ok: true, sessionKey, source: 'local' })
         }
 
@@ -294,6 +312,7 @@ export const Route = createFileRoute('/api/sessions')({
         }
         try {
           await deleteSession(sessionKey)
+          await deletePersistedRunsForSession(sessionKey)
 
           return json({ ok: true, sessionKey })
         } catch (err) {

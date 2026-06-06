@@ -127,4 +127,27 @@ describe('models route', () => {
     expect(json.models[0].id).toBe('nest-model')
     expect(json.models[0].provider).toBe('anthropic')
   })
+
+  it('infers openai-codex from flat codex model ids and adds fallback models', async () => {
+    const envHome = '/mock/profiles/jarvis'
+    process.env.CLAUDE_HOME = envHome
+
+    const configYaml = 'model: gpt-5.4-mini\n'
+    existsSync.mockImplementation((p: string) => p === `${envHome}/config.yaml`)
+    readFileSync.mockImplementation((p: string) => {
+      if (p === `${envHome}/config.yaml`) return configYaml
+      return ''
+    })
+
+    const get = await getHandler()
+    const request = new Request('http://localhost/api/models')
+    const res = await get({ request })
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json.ok).toBe(true)
+    expect(json.currentProvider).toBe('openai-codex')
+    expect(json.models[0].id).toBe('gpt-5.4-mini')
+    expect(json.models[0].provider).toBe('openai-codex')
+    expect(json.models.some((m: any) => m.id === 'gpt-5.5')).toBe(true)
+  })
 })

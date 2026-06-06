@@ -1,8 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router'
 import { randomUUID } from 'node:crypto'
+import { createFileRoute } from '@tanstack/react-router'
 import { isAuthenticated } from '../../server/auth-middleware'
 import { deleteTask, getTask, moveTask, updateTask } from '../../server/tasks-store'
-import { ensureLocalSession, appendLocalMessage, getLocalMessages } from '../../server/local-session-store'
+import { addTaskComment, getTaskComments } from '../../server/task-comments-store'
+import { appendLocalMessage, ensureLocalSession, getLocalMessages } from '../../server/local-session-store'
+import { buildTaskRunRecapForSession } from '../../server/task-run-recap'
 import { getSessionMessages } from '../../server/claude-dashboard-api'
 import type { TaskColumn, TaskPriority } from '../../server/tasks-store'
 
@@ -39,7 +41,9 @@ export const Route = createFileRoute('/api/hermes-tasks/$taskId')({
 
         const task = getTask(params.taskId)
         if (!task) return jsonResponse({ error: 'Task not found' }, 404)
-        return jsonResponse({ task })
+        const comments = getTaskComments(params.taskId)
+        const latestRun = await buildTaskRunRecapForSession(task.session_id, params.taskId)
+        return jsonResponse({ task: { ...task, latestRun }, comments })
       },
 
       PATCH: async ({ request, params }) => {
@@ -59,6 +63,7 @@ export const Route = createFileRoute('/api/hermes-tasks/$taskId')({
             due_date: body.due_date === null || typeof body.due_date === 'string' ? body.due_date : undefined,
             position: typeof body.position === 'number' ? body.position : undefined,
             session_id: body.session_id === null || typeof body.session_id === 'string' ? body.session_id : undefined,
+            blocked_reason: body.blocked_reason === null || typeof body.blocked_reason === 'string' ? body.blocked_reason : undefined,
           })
 
           if (!task) return jsonResponse({ error: 'Task not found' }, 404)
@@ -86,22 +91,123 @@ export const Route = createFileRoute('/api/hermes-tasks/$taskId')({
         const url = new URL(request.url)
         const action = url.searchParams.get('action') || 'move'
 
+        // --- Approval / review actions ---
+
+        if (action === 'approve') {
+          const task = getTask(params.taskId)
+          if (!task) return jsonResponse({ error: 'Task not found' }, 404)
+          const body = await request.json().catch(() => ({})) as Record<string, unknown>
+          const author = typeof body.author === 'string' ? body.author : 'user'
+          const note = typeof body.note === 'string' && body.note.trim() ? ` — ${body.note.trim()}` : ''
+          const comment = addTaskComment({
+            task_id: params.taskId,
+            author,
+            body: `Approved${note}`,
+            action: 'approve',
+          })
+          return jsonResponse({ ok: true, comment, task })
+        }
+
+        if (action === 'approve-and-requeue') {
+          const task = getTask(params.taskId)
+          if (!task) return jsonResponse({ error: 'Task not found' }, 404)
+          const body = await request.json().catch(() => ({})) as Record<string, unknown>
+          const author = typeof body.author === 'string' ? body.author : 'user'
+          const note = typeof body.note === 'string' && body.note.trim() ? ` — ${body.note.trim()}` : ''
+          const comment = addTaskComment({
+            task_id: params.taskId,
+            author,
+            body: `Approved and requeued${note}`,
+            action: 'approve_and_requeue',
+          })
+          const updated = moveTask(params.taskId, 'todo')
+          if (!updated) return jsonResponse({ error: 'Task not found' }, 404)
+          // Clear blocked_reason on requeue
+          const cleared = updateTask(params.taskId, { blocked_reason: null })
+          return jsonResponse({ ok: true, comment, task: cleared ?? updated })
+        }
+
+        if (action === 'request-changes') {
+          const task = getTask(params.taskId)
+          if (!task) return jsonResponse({ error: 'Task not found' }, 404)
+          const body = await request.json().catch(() => ({})) as Record<string, unknown>
+          const author = typeof body.author === 'string' ? body.author : 'user'
+          const commentBody = typeof body.note === 'string' && body.note.trim() ? body.note.trim() : 'Changes requested'
+          const comment = addTaskComment({
+            task_id: params.taskId,
+            author,
+            body: commentBody,
+            action: 'request_changes',
+          })
+          return jsonResponse({ ok: true, comment, task })
+        }
+
+        if (action === 'retry') {
+          const task = getTask(params.taskId)
+          if (!task) return jsonResponse({ error: 'Task not found' }, 404)
+          const body = await request.json().catch(() => ({})) as Record<string, unknown>
+          const author = typeof body.author === 'string' ? body.author : 'user'
+          addTaskComment({
+            task_id: params.taskId,
+            author,
+            body: 'Retried — moved back to ready queue',
+            action: 'retry',
+          })
+          const updated = moveTask(params.taskId, 'todo')
+          if (!updated) return jsonResponse({ error: 'Task not found' }, 404)
+          const cleared = updateTask(params.taskId, { blocked_reason: null })
+          return jsonResponse({ ok: true, task: cleared ?? updated })
+        }
+
+        if (action === 'reject') {
+          const task = getTask(params.taskId)
+          if (!task) return jsonResponse({ error: 'Task not found' }, 404)
+          const body = await request.json().catch(() => ({})) as Record<string, unknown>
+          const author = typeof body.author === 'string' ? body.author : 'user'
+          const note = typeof body.note === 'string' && body.note.trim() ? body.note.trim() : 'Rejected'
+          addTaskComment({
+            task_id: params.taskId,
+            author,
+            body: note,
+            action: 'reject',
+          })
+          const updated = moveTask(params.taskId, 'backlog')
+          if (!updated) return jsonResponse({ error: 'Task not found' }, 404)
+          return jsonResponse({ ok: true, task: updated })
+        }
+
+        if (action === 'comment') {
+          const task = getTask(params.taskId)
+          if (!task) return jsonResponse({ error: 'Task not found' }, 404)
+          const body = await request.json().catch(() => ({})) as Record<string, unknown>
+          if (typeof body.body !== 'string' || !body.body.trim()) {
+            return jsonResponse({ error: 'comment body is required' }, 400)
+          }
+          const author = typeof body.author === 'string' ? body.author : 'user'
+          const comment = addTaskComment({
+            task_id: params.taskId,
+            author,
+            body: body.body.trim(),
+            action: null,
+          })
+          return jsonResponse({ ok: true, comment })
+        }
+
+        // --- Launch action ---
+
         if (action === 'launch') {
           const task = getTask(params.taskId)
           if (!task) return jsonResponse({ error: 'Task not found' }, 404)
 
           const sessionId = `task-${task.id.slice(0, 8)}-${randomUUID().slice(0, 8)}`
 
-          // Fetch prior session tail if linked — prefer dashboard API (real history),
-          // fall back to local store (only has the initial briefing message).
           let priorContext = ''
           if (task.session_id) {
             let tail: Array<{ role: string; content: string }> = []
 
-            // Try dashboard API first — this has the full conversation history
             try {
               const dashResult = await getSessionMessages(task.session_id)
-              if (dashResult?.messages?.length) {
+              if (dashResult.messages.length > 0) {
                 tail = dashResult.messages
                   .filter((m) => m.role === 'user' || m.role === 'assistant')
                   .filter((m) => typeof m.content === 'string' && m.content.trim().length > 0)
@@ -112,7 +218,6 @@ export const Route = createFileRoute('/api/hermes-tasks/$taskId')({
               // Dashboard unavailable — fall back to local store
             }
 
-            // Fall back to local store if dashboard had nothing
             if (tail.length === 0) {
               const localMsgs = getLocalMessages(task.session_id)
               tail = localMsgs
@@ -122,7 +227,6 @@ export const Route = createFileRoute('/api/hermes-tasks/$taskId')({
             }
 
             if (tail.length > 0) {
-              // Truncate individual messages to avoid briefing bloat, but keep meaningful context
               priorContext = `\n\n---\n**Prior session history** (session \`${task.session_id}\`, last ${tail.length} messages):\n${tail.map((m) => `[${m.role.toUpperCase()}] ${m.content.slice(0, 800)}`).join('\n\n')}\n---`
             }
           }
@@ -134,6 +238,7 @@ export const Route = createFileRoute('/api/hermes-tasks/$taskId')({
             `**Task:** ${task.title}`,
             `**Status:** ${task.column}  |  **Priority:** ${task.priority}  |  **Assignee:** ${task.assignee ?? 'Unassigned'}`,
             `**Tags:** ${task.tags.join(', ') || 'none'}  |  **Due:** ${task.due_date ?? 'none'}`,
+            task.blocked_reason ? `**Blocked reason:** ${task.blocked_reason}` : '',
             '',
             '**Description:**',
             task.description || '(none)',
@@ -157,6 +262,8 @@ export const Route = createFileRoute('/api/hermes-tasks/$taskId')({
           return jsonResponse({ sessionId, briefing, task: getTask(params.taskId) })
         }
 
+        // --- Move action ---
+
         if (action !== 'move') {
           return jsonResponse({ error: `Unsupported action: ${action}` }, 400)
         }
@@ -166,7 +273,13 @@ export const Route = createFileRoute('/api/hermes-tasks/$taskId')({
           if (typeof body.column !== 'string') {
             return jsonResponse({ error: 'column is required' }, 400)
           }
-          const task = moveTask(params.taskId, body.column as TaskColumn)
+          const col = body.column as TaskColumn
+          let blockedReason: string | null = null
+          if (col === 'blocked' && typeof body.blocked_reason === 'string') {
+            const trimmedBlockedReason = body.blocked_reason.trim()
+            blockedReason = trimmedBlockedReason.length > 0 ? trimmedBlockedReason : null
+          }
+          const task = updateTask(params.taskId, { column: col, blocked_reason: blockedReason })
           if (!task) return jsonResponse({ error: 'Task not found' }, 404)
           return jsonResponse({ task })
         } catch {

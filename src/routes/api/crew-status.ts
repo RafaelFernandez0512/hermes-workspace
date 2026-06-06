@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import * as yaml from 'yaml'
 import { BEARER_TOKEN, CLAUDE_API, ensureGatewayProbed } from '../../server/gateway-capabilities'
 import { getClaudeRoot, getProfileClaudeHome, getWorkspaceClaudeHome } from '../../server/claude-paths'
+import { listSwarmWorkerIds } from '../../server/swarm-foundation'
 import { formatSwarmWorkerLabel, rosterByWorkerId, type SwarmRosterWorker } from '../../server/swarm-roster'
 
 type CrewDefinition = {
@@ -57,10 +58,12 @@ function buildCrewDefinitionFromRoster(profile: string, worker: SwarmRosterWorke
 
 function buildCrewDefinitions(): CrewDefinition[] {
   const profilesDir = join(getClaudeRoot(), 'profiles')
+  const scopedProfiles = new Set(listSwarmWorkerIds({ swarmOnly: true }))
   const dynamicProfiles = existsSync(profilesDir)
     ? readdirSync(profilesDir, { withFileTypes: true })
         .filter((entry) => {
           const profilePath = join(profilesDir, entry.name)
+          if (!scopedProfiles.has(entry.name)) return false
           if (entry.isDirectory()) return true
           if (!entry.isSymbolicLink()) return false
           try {
@@ -76,7 +79,7 @@ function buildCrewDefinitions(): CrewDefinition[] {
   const roster = rosterByWorkerId(dynamicProfiles)
   return [
     { id: 'workspace', displayName: 'Workspace', humanLabel: 'Workspace — Primary profile', role: 'Primary profile', profilePath: null },
-    ...dynamicProfiles.map((profile) => buildCrewDefinitionFromRoster(profile, /^swarm\d+$/i.test(profile) ? roster.get(profile) : null)),
+    ...dynamicProfiles.map((profile) => buildCrewDefinitionFromRoster(profile, roster.get(profile))),
   ]
 }
 

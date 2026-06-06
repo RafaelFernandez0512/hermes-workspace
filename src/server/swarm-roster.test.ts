@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SwarmRosterSchema, SwarmRosterUpsertSchema, isSwarmWorkerId } from './swarm-roster'
+import { SwarmRosterSchema, SwarmRosterUpsertSchema, isSwarmWorkerId, readSwarmRoster } from './swarm-roster'
 
 describe('swarm roster semantic workers', () => {
   it('accepts both legacy swarm ids and semantic profile ids for upsert', () => {
@@ -23,6 +23,14 @@ describe('swarm roster semantic workers', () => {
     expect(isSwarmWorkerId('builder')).toBe(true)
     expect(isSwarmWorkerId('km-agent')).toBe(true)
     expect(isSwarmWorkerId('../bad')).toBe(false)
+  })
+
+  it('filters roster responses to the requested worker ids', () => {
+    const roster = readSwarmRoster(['system-operator', 'infrastructure-agent'])
+    expect(roster.workers.map((worker) => worker.id)).toEqual([
+      'system-operator',
+      'infrastructure-agent',
+    ])
   })
 
   it('preserves semantic roster metadata through parse', () => {

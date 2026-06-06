@@ -23,11 +23,15 @@ type ScrollRequest = {
 }
 
 const TMUX_BIN_CANDIDATES = [
+  process.env.HERMES_TMUX_BIN,
+  process.env.CLAUDE_TMUX_BIN,
+  process.env.TMUX_BIN,
   join(homedir(), '.local', 'bin', 'tmux'),
-  '/opt/homebrew/bin/tmux',
+  '/usr/bin/tmux',
   '/usr/local/bin/tmux',
+  '/opt/homebrew/bin/tmux',
   'tmux',
-]
+].filter((value): value is string => Boolean(value))
 
 function resolveTmuxBin(): string | null {
   for (const candidate of TMUX_BIN_CANDIDATES) {

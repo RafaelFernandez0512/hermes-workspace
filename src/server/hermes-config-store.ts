@@ -140,15 +140,22 @@ function writeEnv(envPath: string, env: Record<string, string>): void {
 }
 
 function readAuthProfiles(authProfilesPath: string): Record<string, unknown> {
-  try {
-    const raw = fs.readFileSync(authProfilesPath, 'utf-8')
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {}
-  } catch {
-    return {}
+  const candidates = [
+    authProfilesPath,
+    path.join(path.dirname(authProfilesPath), 'auth.json'),
+  ]
+
+  for (const candidate of candidates) {
+    try {
+      const raw = fs.readFileSync(candidate, 'utf-8')
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>
+      }
+    } catch {}
   }
+
+  return {}
 }
 
 export function readHermesConfigFiles(paths: HermesConfigPaths): HermesConfigFiles {

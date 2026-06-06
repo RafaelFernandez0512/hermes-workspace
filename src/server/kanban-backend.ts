@@ -15,9 +15,11 @@ import {
 import { CLAUDE_DASHBOARD_URL, getCapabilities } from './gateway-capabilities'
 import {
   fetchDashboardKanbanBoard,
+  fetchDashboardKanbanTaskDetail,
   createDashboardKanbanTask,
   updateDashboardKanbanTask,
   type DashboardKanbanTask,
+  type DashboardKanbanTaskDetailResponse,
 } from './kanban-dashboard-proxy'
 
 export type KanbanBackendId = 'local' | 'claude' | 'hermes-proxy'
@@ -34,6 +36,7 @@ export type KanbanBackendMeta = {
 type KanbanBackend = {
   meta(): KanbanBackendMeta
   list(): SwarmKanbanCard[] | Promise<SwarmKanbanCard[]>
+  get(cardId: string): SwarmKanbanCard | null | Promise<SwarmKanbanCard | null>
   create(input: CreateSwarmKanbanCardInput): SwarmKanbanCard | Promise<SwarmKanbanCard>
   update(
     cardId: string,
@@ -121,6 +124,40 @@ function dashboardTaskToCard(task: DashboardKanbanTask): SwarmKanbanCard {
   }
 }
 
+function latestDashboardRun(detail: DashboardKanbanTaskDetailResponse): SwarmKanbanCard['latestRun'] {
+  const run = [...(detail.runs ?? [])].sort((a, b) => {
+    const aEnded = typeof a.ended_at === 'number' ? a.ended_at : 0
+    const bEnded = typeof b.ended_at === 'number' ? b.ended_at : 0
+    if (bEnded !== aEnded) return bEnded - aEnded
+    const aStarted = typeof a.started_at === 'number' ? a.started_at : 0
+    const bStarted = typeof b.started_at === 'number' ? b.started_at : 0
+    if (bStarted !== aStarted) return bStarted - aStarted
+    return (b.id ?? 0) - (a.id ?? 0)
+  })[0]
+  if (!run) return null
+  return {
+    summary: run.summary ?? undefined,
+    outcome: run.outcome ?? undefined,
+    status: run.status ?? undefined,
+    error: run.error ?? undefined,
+    metadata: run.metadata ?? null,
+    profile: run.profile ?? null,
+    startedAt: run.started_at ?? null,
+    endedAt: run.ended_at ?? null,
+  }
+}
+
+function dashboardTaskDetailToCard(detail: DashboardKanbanTaskDetailResponse): SwarmKanbanCard {
+  const task = detail.task
+  if (!task) {
+    throw new Error('Dashboard kanban task detail payload missing task')
+  }
+  return {
+    ...dashboardTaskToCard(task),
+    latestRun: latestDashboardRun(detail),
+  }
+}
+
 type ClaudeTaskRow = {
   id: string
   title: string
@@ -134,6 +171,7 @@ type ClaudeTaskRow = {
   latest_run_summary?: string | null
   latest_run_outcome?: string | null
   latest_run_status?: string | null
+  latest_run_metadata?: string | null
 }
 
 type ClaudeDetection = {
@@ -231,7 +269,8 @@ function claudeTaskProjection(): string {
     "coalesce((select json_group_array(child_id) from task_links where parent_id = tasks.id), '[]') as children_json,",
     '(select summary from task_runs where task_id = tasks.id order by started_at desc, id desc limit 1) as latest_run_summary,',
     '(select outcome from task_runs where task_id = tasks.id order by started_at desc, id desc limit 1) as latest_run_outcome,',
-    '(select status from task_runs where task_id = tasks.id order by started_at desc, id desc limit 1) as latest_run_status',
+    '(select status from task_runs where task_id = tasks.id order by started_at desc, id desc limit 1) as latest_run_status,',
+    '(select metadata from task_runs where task_id = tasks.id order by started_at desc, id desc limit 1) as latest_run_metadata',
   ].join(' ')
 }
 
@@ -282,6 +321,18 @@ function parseJsonStringArray(value: string | null | undefined): string[] {
       : []
   } catch {
     return []
+  }
+}
+
+function parseJsonObject(value: string | null | undefined): Record<string, unknown> | null {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null
+  } catch {
+    return null
   }
 }
 
@@ -365,11 +416,12 @@ function deriveNativeCreateStatus(
 function claudeTaskToCard(task: ClaudeTaskRow): SwarmKanbanCard {
   const createdAt = normalizeTimestamp(task.created_at)
   const updatedAt = normalizeTimestamp(task.updated_at ?? task.created_at)
-  const latestRun = task.latest_run_summary || task.latest_run_outcome || task.latest_run_status
+  const latestRun = task.latest_run_summary || task.latest_run_outcome || task.latest_run_status || task.latest_run_metadata
     ? {
         summary: task.latest_run_summary ?? undefined,
         outcome: task.latest_run_outcome ?? undefined,
         status: task.latest_run_status ?? undefined,
+        metadata: parseJsonObject(task.latest_run_metadata),
       }
     : undefined
   return {
@@ -406,6 +458,9 @@ const localBackend: KanbanBackend = {
   list() {
     return listSwarmKanbanCards()
   },
+  get(cardId) {
+    return listSwarmKanbanCards().find((card) => card.id === cardId) ?? null
+  },
   create(input) {
     return createSwarmKanbanCard(input)
   },
@@ -430,6 +485,10 @@ const claudeBackend: KanbanBackend = {
   },
   list() {
     return readClaudeTasks().map(claudeTaskToCard)
+  },
+  get(cardId) {
+    const task = readClaudeTask(cardId)
+    return task ? claudeTaskToCard(task) : null
   },
   create(input) {
     const detection = detectClaudeKanban()
@@ -538,6 +597,10 @@ const dashboardProxyBackend: KanbanBackend = {
       (a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title),
     )
   },
+  async get(cardId) {
+    const detail = await fetchDashboardKanbanTaskDetail(cardId)
+    return detail ? dashboardTaskDetailToCard(detail) : null
+  },
   async create(input) {
     const task = await createDashboardKanbanTask({
       title: input.title.trim(),
@@ -613,6 +676,10 @@ export function getKanbanBackendMeta(): KanbanBackendMeta {
 
 export async function listKanbanCards(): Promise<SwarmKanbanCard[]> {
   return Promise.resolve(resolveKanbanBackend().list())
+}
+
+export async function getKanbanCard(cardId: string): Promise<SwarmKanbanCard | null> {
+  return Promise.resolve(resolveKanbanBackend().get(cardId))
 }
 
 export async function createKanbanCard(

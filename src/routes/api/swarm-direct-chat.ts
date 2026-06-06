@@ -34,11 +34,15 @@ const DEFAULT_TIMEOUT_MS = 90_000
 const MAX_TIMEOUT_MS = 180_000
 
 const TMUX_BIN_CANDIDATES = [
+  process.env.HERMES_TMUX_BIN,
+  process.env.CLAUDE_TMUX_BIN,
+  process.env.TMUX_BIN,
   join(homedir(), '.local', 'bin', 'tmux'),
-  '/opt/homebrew/bin/tmux',
+  '/usr/bin/tmux',
   '/usr/local/bin/tmux',
+  '/opt/homebrew/bin/tmux',
   'tmux',
-]
+].filter((value): value is string => Boolean(value))
 
 function validateWorkerId(workerId: string): boolean {
   return /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(workerId)

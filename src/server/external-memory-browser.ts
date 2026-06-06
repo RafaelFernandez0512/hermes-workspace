@@ -3,15 +3,20 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+type ExternalMemoryProviderKind = 'custom' | 'hindsight'
+
 const VALID_STATES = new Set(['candidate', 'approved', 'rejected'])
 
 export type ExternalMemoryProvider = {
   id: string
   label: string
-  kind: 'custom'
+  kind: ExternalMemoryProviderKind
   capabilities: Array<string>
-  dbPath: string
-  configPath: string
+  dbPath?: string
+  configPath?: string
+  apiUrl?: string
+  bankId?: string
+  mode?: string
   available: boolean
 }
 
@@ -68,6 +73,31 @@ type RawProviderConfig = {
   config_path?: unknown
 }
 
+type HindsightConfig = {
+  mode?: unknown
+  api_url?: unknown
+  bank_id?: unknown
+  api_key?: unknown
+}
+
+type HindsightDocumentSummary = {
+  id: string
+  bank_id?: string
+  content_hash?: string | null
+  created_at?: string
+  updated_at?: string
+  text_length?: number
+  memory_unit_count?: number
+  document_metadata?: Record<string, unknown> | null
+  retain_params?: Record<string, unknown> | null
+  tags?: Array<string>
+}
+
+type HindsightDocument = HindsightDocumentSummary & {
+  original_text: string
+  nodes_by_fact_type?: Record<string, number> | null
+}
+
 function getHermesHome(): string {
   const envHome = (process.env.HERMES_HOME || process.env.CLAUDE_HOME)?.trim()
   return path.resolve(envHome || path.join(os.homedir(), '.hermes'))
@@ -115,49 +145,36 @@ function readProviderRegistry(): Array<RawProviderConfig> {
   return []
 }
 
-export function listExternalMemoryProviders(): {
-  ok: true
-  active: string
-  providers: Array<ExternalMemoryProvider>
-} {
-  const hermesHome = getHermesHome()
-  const seen = new Set<string>()
-  const providers: Array<ExternalMemoryProvider> = []
-
-  for (const item of readProviderRegistry()) {
-    const id = safeProviderId(item.id ?? item.name)
-    if (!id || seen.has(id)) continue
-    const dbPath = resolveUnderHermesHome(hermesHome, item.db_path)
-    if (!dbPath) continue
-    const configPath = resolveUnderHermesHome(hermesHome, item.config_path)
-    seen.add(id)
-    providers.push({
-      id,
-      label: String(
-        item.label ||
-          id.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase()),
-      ),
-      kind: 'custom',
-      capabilities: ['review', 'search'],
-      dbPath,
-      configPath,
-      available: fs.existsSync(dbPath) || fs.existsSync(path.dirname(dbPath)),
-    })
+function readHindsightConfig(hermesHome: string): {
+  config: HindsightConfig
+  configPath: string
+} | null {
+  const configPath = path.join(hermesHome, 'hindsight', 'config.json')
+  if (!fs.existsSync(configPath)) return null
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as HindsightConfig
+    return { config, configPath }
+  } catch {
+    return null
   }
-
-  return { ok: true, active: providers[0]?.id || '', providers }
 }
 
-function getProvider(provider?: string): ExternalMemoryProvider {
-  const providers = listExternalMemoryProviders().providers
-  if (providers.length === 0)
-    throw new Error('No external memory providers configured')
-  const providerId = provider ? safeProviderId(provider) : providers[0]?.id
-  const match = providers.find((item) => item.id === providerId)
-  if (!match)
-    throw new Error(`External memory provider not found: ${providerId || ''}`)
-  return match
+async function checkUrlAvailable(url: string): Promise<boolean> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 2_000)
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+    })
+    return response.ok
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timeout)
+  }
 }
+
 
 function coerceLimit(
   value: number | string | undefined,
@@ -277,8 +294,8 @@ function runSqliteQuery<T>(
   provider: ExternalMemoryProvider,
   args: Array<string>,
 ): T {
-  if (!fs.existsSync(provider.dbPath)) {
-    throw new Error(`External memory database not found: ${provider.dbPath}`)
+  if (!provider.dbPath || !fs.existsSync(provider.dbPath)) {
+    throw new Error(`External memory database not found: ${provider.dbPath || ''}`)
   }
   const raw = execFileSync(
     'python3',
@@ -292,13 +309,273 @@ function runSqliteQuery<T>(
   return JSON.parse(raw) as T
 }
 
-export function listExternalMemoryCandidates(options: {
+function ensureHindsightProvider(provider: ExternalMemoryProvider): asserts provider is ExternalMemoryProvider & {
+  kind: 'hindsight'
+  apiUrl: string
+  bankId: string
+} {
+  if (provider.kind !== 'hindsight' || !provider.apiUrl || !provider.bankId) {
+    throw new Error('Hindsight provider is not fully configured')
+  }
+}
+
+async function hindsightRequest<T>(
+  provider: ExternalMemoryProvider,
+  input: string,
+  init?: RequestInit,
+): Promise<T> {
+  ensureHindsightProvider(provider)
+  const response = await fetch(`${provider.apiUrl}${input}`, {
+    ...init,
+    headers: {
+      Accept: 'application/json',
+      ...(init?.headers || {}),
+    },
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(text || `Hindsight request failed (${response.status})`)
+  }
+  return (await response.json()) as T
+}
+
+function toTimestamp(value?: string): number {
+  if (!value) return 0
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function toHindsightCandidate(
+  provider: ExternalMemoryProvider,
+  document: HindsightDocument,
+): ExternalMemoryCandidate {
+  return {
+    provider: provider.id,
+    id: document.id,
+    text: document.original_text,
+    source: `hindsight:${provider.bankId || document.bank_id || ''}`,
+    metadata: {
+      kind: 'document',
+      bankId: document.bank_id || provider.bankId || '',
+      tags: document.tags || [],
+      memoryUnitCount: document.memory_unit_count || 0,
+      textLength: document.text_length || document.original_text.length,
+      nodesByFactType: document.nodes_by_fact_type || {},
+      documentMetadata: document.document_metadata || null,
+      retainParams: document.retain_params || null,
+    },
+    state: 'document',
+    contentSha256: document.content_hash || '',
+    createdAt: toTimestamp(document.created_at),
+    updatedAt: toTimestamp(document.updated_at),
+  }
+}
+
+async function listHindsightDocuments(
+  provider: ExternalMemoryProvider,
+  limit: number,
+  offset: number,
+): Promise<{ total: number; documents: Array<HindsightDocument> }> {
+  ensureHindsightProvider(provider)
+  const bankId = encodeURIComponent(provider.bankId)
+  const summary = await hindsightRequest<{
+    items?: Array<HindsightDocumentSummary>
+    total?: number
+    limit?: number
+    offset?: number
+  }>(
+    provider,
+    `/v1/default/banks/${bankId}/documents?limit=${limit}&offset=${offset}`,
+  )
+  const items = summary.items || []
+  const documents = await Promise.all(
+    items.map(async (item) =>
+      hindsightRequest<HindsightDocument>(
+        provider,
+        `/v1/default/banks/${bankId}/documents/${encodeURIComponent(item.id)}`,
+      ),
+    ),
+  )
+  return { total: summary.total || documents.length, documents }
+}
+
+async function searchHindsightDocuments(
+  provider: ExternalMemoryProvider,
+  query: string,
+  limit: number,
+): Promise<Array<HindsightDocument>> {
+  ensureHindsightProvider(provider)
+  const pageLimit = Math.max(limit * 4, 100)
+  const { documents } = await listHindsightDocuments(provider, pageLimit, 0)
+  const normalized = query.trim().toLowerCase()
+  if (!normalized) return []
+  return documents
+    .filter((document) => {
+      const haystack = JSON.stringify({
+        id: document.id,
+        text: document.original_text,
+        tags: document.tags || [],
+        metadata: document.document_metadata || {},
+        retain: document.retain_params || {},
+      }).toLowerCase()
+      return haystack.includes(normalized)
+    })
+    .slice(0, limit)
+}
+
+async function listHindsightCandidates(options: {
+  provider: ExternalMemoryProvider
+  limit?: number | string
+  offset?: number | string
+}): Promise<ExternalMemoryListResult> {
+  const limit = coerceLimit(options.limit, 25, 100)
+  const offset = coerceOffset(options.offset)
+  const { total, documents } = await listHindsightDocuments(
+    options.provider,
+    limit,
+    offset,
+  )
+  return {
+    ok: true,
+    provider: options.provider.id,
+    state: 'all',
+    limit,
+    offset,
+    count: documents.length,
+    total,
+    counts: {
+      candidate: 0,
+      approved: 0,
+      rejected: 0,
+      all: total,
+    },
+    candidates: documents.map((document) =>
+      toHindsightCandidate(options.provider, document),
+    ),
+  }
+}
+
+async function searchHindsightCandidates(options: {
+  provider: ExternalMemoryProvider
+  query: string
+  limit?: number | string
+}): Promise<ExternalMemorySearchResult> {
+  const limit = coerceLimit(options.limit, 25, 100)
+  const documents = await searchHindsightDocuments(
+    options.provider,
+    options.query,
+    limit,
+  )
+  return {
+    ok: true,
+    provider: options.provider.id,
+    query: options.query,
+    limit,
+    count: documents.length,
+    results: documents.map((document) =>
+      toHindsightCandidate(options.provider, document),
+    ),
+  }
+}
+
+async function deleteHindsightCandidate(options: {
+  provider: ExternalMemoryProvider
+  id: string
+}): Promise<ExternalMemoryDeleteResult> {
+  ensureHindsightProvider(options.provider)
+  const bankId = encodeURIComponent(options.provider.bankId)
+  await hindsightRequest(
+    options.provider,
+    `/v1/default/banks/${bankId}/documents/${encodeURIComponent(options.id)}`,
+    { method: 'DELETE' },
+  )
+  return {
+    ok: true,
+    provider: options.provider.id,
+    deleted: options.id,
+  }
+}
+
+export function listExternalMemoryProviders(): {
+  ok: true
+  active: string
+  providers: Array<ExternalMemoryProvider>
+} {
+  const hermesHome = getHermesHome()
+  const seen = new Set<string>()
+  const providers: Array<ExternalMemoryProvider> = []
+
+  const hindsight = readHindsightConfig(hermesHome)
+  if (hindsight) {
+    const mode = String(hindsight.config.mode || '').trim().toLowerCase()
+    const apiUrl = String(hindsight.config.api_url || '').trim().replace(/\/$/, '')
+    const bankId = String(hindsight.config.bank_id || 'hermes').trim() || 'hermes'
+    if (apiUrl && mode !== 'local_embedded') {
+      seen.add('hindsight')
+      providers.push({
+        id: 'hindsight',
+        label: 'Hindsight',
+        kind: 'hindsight',
+        capabilities: ['browse', 'search', 'delete'],
+        apiUrl,
+        bankId,
+        mode,
+        configPath: hindsight.configPath,
+        available: true,
+      })
+    }
+  }
+
+  for (const item of readProviderRegistry()) {
+    const id = safeProviderId(item.id ?? item.name)
+    if (!id || seen.has(id)) continue
+    const dbPath = resolveUnderHermesHome(hermesHome, item.db_path)
+    if (!dbPath) continue
+    const configPath = resolveUnderHermesHome(hermesHome, item.config_path)
+    seen.add(id)
+    providers.push({
+      id,
+      label: String(
+        item.label ||
+          id.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase()),
+      ),
+      kind: 'custom',
+      capabilities: ['review', 'search', 'delete'],
+      dbPath,
+      configPath,
+      available: fs.existsSync(dbPath) || fs.existsSync(path.dirname(dbPath)),
+    })
+  }
+
+  return { ok: true, active: providers[0]?.id || '', providers }
+}
+
+function getProvider(provider?: string): ExternalMemoryProvider {
+  const providers = listExternalMemoryProviders().providers
+  if (providers.length === 0)
+    throw new Error('No external memory providers configured')
+  const providerId = provider ? safeProviderId(provider) : providers[0]?.id
+  const match = providers.find((item) => item.id === providerId)
+  if (!match)
+    throw new Error(`External memory provider not found: ${providerId || ''}`)
+  return match
+}
+
+export async function listExternalMemoryCandidates(options: {
   provider?: string
   state?: string
   limit?: number | string
   offset?: number | string
-}): ExternalMemoryListResult {
+}): Promise<ExternalMemoryListResult> {
   const provider = getProvider(options.provider)
+  if (provider.kind === 'hindsight') {
+    return listHindsightCandidates({
+      provider,
+      limit: options.limit,
+      offset: options.offset,
+    })
+  }
+
   const requestedState = String(options.state || 'all')
     .trim()
     .toLowerCase()
@@ -317,14 +594,17 @@ export function listExternalMemoryCandidates(options: {
   ])
 }
 
-export function searchExternalMemoryCandidates(options: {
+export async function searchExternalMemoryCandidates(options: {
   provider?: string
   query: string
   limit?: number | string
-}): ExternalMemorySearchResult {
+}): Promise<ExternalMemorySearchResult> {
   const provider = getProvider(options.provider)
   const query = options.query.trim()
   if (!query) throw new Error('query is required')
+  if (provider.kind === 'hindsight') {
+    return searchHindsightCandidates({ provider, query, limit: options.limit })
+  }
   const limit = coerceLimit(options.limit, 25, 100)
   return runSqliteQuery<ExternalMemorySearchResult>(provider, [
     'search',
@@ -344,6 +624,9 @@ function runExternalMemoryMutation<T>(options: {
   const provider = getProvider(options.provider)
   const id = String(options.id || '').trim()
   if (!id) throw new Error('candidate id is required')
+  if (provider.kind !== 'custom') {
+    throw new Error(`${provider.label} does not support this review action`)
+  }
   return runSqliteQuery<T>(provider, [
     options.mode,
     id,
@@ -392,13 +675,21 @@ export function rejectExternalMemoryCandidate(options: {
   })
 }
 
-export function deleteExternalMemoryCandidate(options: {
+export async function deleteExternalMemoryCandidate(options: {
   provider?: string
   id: string
-}): ExternalMemoryDeleteResult {
+}): Promise<ExternalMemoryDeleteResult> {
+  const provider = getProvider(options.provider)
+  const id = String(options.id || '').trim()
+  if (!id) throw new Error('candidate id is required')
+  if (provider.kind === 'hindsight') {
+    return deleteHindsightCandidate({ provider, id })
+  }
   return runExternalMemoryMutation<ExternalMemoryDeleteResult>({
     provider: options.provider,
-    id: options.id,
+    id,
     mode: 'delete',
   })
 }
+
+export { checkUrlAvailable }
