@@ -19,6 +19,7 @@ export const Route = createFileRoute('/api/swarm-lifecycle/status')({
       GET: async ({ request }) => {
         if (!isAuthenticated(request))
           return json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+        try {
 
         const url = new URL(request.url)
         const swarmId = url.searchParams.get('swarmId')?.trim() || ''
@@ -109,6 +110,11 @@ export const Route = createFileRoute('/api/swarm-lifecycle/status')({
         }
 
         return json({ ok: true, ...payload })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          const stack = err instanceof Error ? err.stack : undefined
+          return json({ ok: false, error: msg, stack }, { status: 500 })
+        }
       },
     },
   },
