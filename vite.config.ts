@@ -467,6 +467,8 @@ const config = defineConfig(({ mode, command }) => {
         'playwright-core',
         'playwright-extra',
         'puppeteer-extra-plugin-stealth',
+        'ssh2',
+        'cpu-features',
       ],
     },
     optimizeDeps: {
@@ -475,6 +477,7 @@ const config = defineConfig(({ mode, command }) => {
         'playwright-core',
         'playwright-extra',
         'puppeteer-extra-plugin-stealth',
+        'ssh2',
       ],
     },
     server: {
