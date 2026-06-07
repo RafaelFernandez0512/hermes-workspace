@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { withTargetContext } from '../../server/workspace-targets/middleware'
+
 import { buildResolvedSessionHeaders } from '../../lib/send-stream-session-headers'
 import { buildWorkspaceScopedTextMessage } from '../../lib/workspace-message-scope'
 import { resolveSessionKey } from '../../server/session-utils'
@@ -302,7 +302,6 @@ export const Route = createFileRoute('/api/send-stream')({
         }
         const csrfCheck = requireJsonContentType(request)
         if (csrfCheck) return csrfCheck
-        return withTargetContext(request, async () => {
         await ensureGatewayProbed()
 
         // Read body manually to handle large payloads (image attachments
@@ -1616,7 +1615,6 @@ export const Route = createFileRoute('/api/send-stream')({
             }),
           },
         })
-        }) // end withTargetContext
       },
     },
   },
