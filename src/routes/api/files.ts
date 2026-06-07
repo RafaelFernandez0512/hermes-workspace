@@ -16,6 +16,9 @@ import {
   safeErrorMessage,
 } from '../../server/rate-limit'
 import { loadWorkspaceCatalog } from './workspace'
+import { withTargetContext } from '../../server/workspace-targets/middleware'
+import { resolveFilesAdapter } from '../../server/workspace-targets/resolver'
+import type { FilesAdapter } from '../../server/workspace-targets/types'
 
 const execFileAsync = promisify(execFile)
 
@@ -266,6 +269,69 @@ function isImageFile(filePath: string) {
   return ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'].includes(ext)
 }
 
+/**
+ * Handle a GET files request via a remote FilesAdapter (SFTP).
+ * Supports list and read actions only — download/view/glob are local-only.
+ */
+async function handleRemoteGet(
+  adapter: FilesAdapter,
+  url: URL,
+): Promise<Response | null> {
+  const action = url.searchParams.get('action') || 'list'
+  const inputPath = url.searchParams.get('path') || ''
+  if (action === 'list') {
+    const entries = await adapter.list(inputPath)
+    return Response.json({ root: inputPath, entries })
+  }
+  if (action === 'read') {
+    const { content, encoding } = await adapter.read(inputPath)
+    if (encoding === 'base64') {
+      return Response.json({
+        type: 'image',
+        path: inputPath,
+        content: `data:application/octet-stream;base64,${content}`,
+      })
+    }
+    return Response.json({ type: 'text', path: inputPath, content })
+  }
+  // Other actions (download, view, glob) fall through to local handler.
+  return null
+}
+
+/**
+ * Handle a POST files request via a remote FilesAdapter (SFTP).
+ * Supports write, mkdir, rename, delete — upload is local-only.
+ */
+async function handleRemotePost(
+  adapter: FilesAdapter,
+  request: Request,
+): Promise<Response | null> {
+  const contentType = request.headers.get('content-type') || ''
+  if (contentType.includes('multipart/form-data')) {
+    // Upload not supported over SFTP adapter yet — fall through.
+    return null
+  }
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  const action = typeof body.action === 'string' ? body.action : 'write'
+
+  if (action === 'mkdir') {
+    await adapter.mkdir(String(body.path || ''))
+    return Response.json({ ok: true, path: String(body.path || '') })
+  }
+  if (action === 'rename') {
+    await adapter.rename(String(body.from || ''), String(body.to || ''))
+    return Response.json({ ok: true })
+  }
+  if (action === 'delete') {
+    await adapter.remove(String(body.path || ''))
+    return Response.json({ ok: true })
+  }
+  // Default: write
+  const content = typeof body.content === 'string' ? body.content : ''
+  await adapter.write(String(body.path || ''), content, 'utf-8')
+  return Response.json({ ok: true, path: String(body.path || '') })
+}
+
 export const Route = createFileRoute('/api/files')({
   server: {
     handlers: {
@@ -273,7 +339,18 @@ export const Route = createFileRoute('/api/files')({
         if (!isAuthenticated(request)) {
           return json({ ok: false, error: 'Unauthorized' }, { status: 401 })
         }
-        try {
+        return withTargetContext(request, async () => {
+          try {
+            const adapter = await resolveFilesAdapter()
+            if (adapter.kind === 'sftp') {
+              const url = new URL(request.url)
+              const remote = await handleRemoteGet(adapter, url)
+              if (remote) return remote
+            }
+          } catch {
+            // Fall through to local handler on adapter errors
+          }
+          try {
           const url = new URL(request.url)
           const action = url.searchParams.get('action') || 'list'
           const inputPath = url.searchParams.get('path') || ''
@@ -342,9 +419,10 @@ export const Route = createFileRoute('/api/files')({
             base: workspaceRoot,
             entries: tree,
           })
-        } catch (err) {
-          return json({ error: safeErrorMessage(err) }, { status: 500 })
-        }
+          } catch (err) {
+            return json({ error: safeErrorMessage(err) }, { status: 500 })
+          }
+        })
       },
       POST: async ({ request }) => {
         if (!isAuthenticated(request)) {
@@ -354,8 +432,17 @@ export const Route = createFileRoute('/api/files')({
         if (!rateLimit(`files:${ip}`, 30, 60_000)) {
           return rateLimitResponse()
         }
-
-        try {
+        return withTargetContext(request, async () => {
+          try {
+            const adapter = await resolveFilesAdapter()
+            if (adapter.kind === 'sftp') {
+              const remote = await handleRemotePost(adapter, request.clone())
+              if (remote) return remote
+            }
+          } catch {
+            // Fall through to local handler on adapter errors
+          }
+          try {
           const workspaceRoot = await getWorkspaceRoot()
           const contentType = request.headers.get('content-type') || ''
           if (!contentType.includes('multipart/form-data')) {
@@ -446,9 +533,10 @@ export const Route = createFileRoute('/api/files')({
           await fs.mkdir(path.dirname(filePath), { recursive: true })
           await fs.writeFile(filePath, content, 'utf8')
           return json({ ok: true, path: toRelative(filePath, workspaceRoot) })
-        } catch (err) {
-          return json({ error: safeErrorMessage(err) }, { status: 500 })
-        }
+          } catch (err) {
+            return json({ error: safeErrorMessage(err) }, { status: 500 })
+          }
+        })
       },
     },
   },

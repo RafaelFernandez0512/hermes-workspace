@@ -5,8 +5,10 @@ import {
   rateLimitResponse,
   requireJsonContentType,
 } from '../../server/rate-limit'
-import { getTerminalSession } from '../../server/terminal-sessions'
+import { getTerminalSession, validateSessionTarget } from '../../server/terminal-sessions'
 import { requireLocalOrAuth } from '../../server/auth-middleware'
+import { withTargetContext } from '../../server/workspace-targets/middleware'
+import { getActiveTargetId } from '../../server/workspace-targets/resolver'
 
 export const Route = createFileRoute('/api/terminal-input')({
   server: {
@@ -31,20 +33,25 @@ export const Route = createFileRoute('/api/terminal-input')({
           return rateLimitResponse()
         }
 
-        const body = (await request.json().catch(() => ({}))) as Record<
-          string,
-          unknown
-        >
-        const sessionId =
-          typeof body.sessionId === 'string' ? body.sessionId : ''
-        const data = typeof body.data === 'string' ? body.data : ''
-        const session = getTerminalSession(sessionId)
-        if (!session) {
-          return new Response(null, { status: 204 })
-        }
-        session.sendInput(data)
-        return new Response(JSON.stringify({ ok: true }), {
-          headers: { 'Content-Type': 'application/json' },
+        return withTargetContext(request, async () => {
+          const body = (await request.json().catch(() => ({}))) as Record<
+            string,
+            unknown
+          >
+          const sessionId =
+            typeof body.sessionId === 'string' ? body.sessionId : ''
+          const data = typeof body.data === 'string' ? body.data : ''
+          if (!validateSessionTarget(sessionId, getActiveTargetId())) {
+            return new Response(null, { status: 204 })
+          }
+          const session = getTerminalSession(sessionId)
+          if (!session) {
+            return new Response(null, { status: 204 })
+          }
+          session.sendInput(data)
+          return new Response(JSON.stringify({ ok: true }), {
+            headers: { 'Content-Type': 'application/json' },
+          })
         })
       },
     },

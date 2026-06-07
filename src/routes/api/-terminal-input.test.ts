@@ -10,6 +10,15 @@ vi.mock('../../server/auth-middleware', () => ({
 
 vi.mock('../../server/terminal-sessions', () => ({
   getTerminalSession: vi.fn(),
+  validateSessionTarget: () => true,
+}))
+
+vi.mock('../../server/workspace-targets/middleware', () => ({
+  withTargetContext: (_req: unknown, fn: () => unknown) => fn(),
+}))
+
+vi.mock('../../server/workspace-targets/resolver', () => ({
+  getActiveTargetId: () => undefined,
 }))
 
 vi.mock('../../server/rate-limit', () => ({

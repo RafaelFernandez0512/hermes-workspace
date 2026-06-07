@@ -21,6 +21,7 @@ import { DebugPanel } from '@/components/terminal/debug-panel'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useTerminalPanelStore } from '@/stores/terminal-panel-store'
+import { RemoteModeBanner } from '@/components/workspace-targets/remote-mode-banner'
 
 // Dynamic imports to avoid SSR crash (xterm uses `self` which doesn't exist on server)
 let xtermLoaded = false
@@ -772,7 +773,7 @@ export function TerminalWorkspace({
           : { height: '100%' }
       }
     >
-      {/* fullscreen header removed — tab bar handles everything */}
+      <RemoteModeBanner channel="terminal" />
 
       <div className="flex h-8 items-center border-b border-primary-300 bg-primary-100 px-1">
         <div className="flex min-w-0 flex-1 items-center overflow-x-auto">

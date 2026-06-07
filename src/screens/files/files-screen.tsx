@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Markdown } from '@/components/prompt-kit/markdown'
+import { RemoteModeBanner } from '@/components/workspace-targets/remote-mode-banner'
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -1199,7 +1200,9 @@ export function FilesScreen() {
   const selectedPath = selectedEntry?.path ?? null
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden bg-primary-50/95 dark:bg-neutral-950">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-primary-50/95 dark:bg-neutral-950">
+      <RemoteModeBanner channel="files" />
+      <div className="flex flex-1 min-h-0 overflow-hidden">
       {/* ── Left panel — directory tree ─────────────────────────────────── */}
       <aside
         className={cn(
@@ -1410,6 +1413,7 @@ export function FilesScreen() {
           </div>
         </DialogContent>
       </DialogRoot>
+      </div>
     </div>
   )
 }

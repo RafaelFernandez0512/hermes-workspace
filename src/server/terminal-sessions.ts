@@ -32,6 +32,7 @@ export type TerminalSession = {
   markDetached: () => void
   /** Cancel a pending detached-reap timer (called when a new listener attaches). */
   markAttached: () => void
+  targetId?: string
 }
 
 // How long an unattached PTY session stays alive before it's reaped, in ms.
@@ -371,4 +372,29 @@ export function closeTerminalSession(id: string): void {
   const session = sessions.get(id)
   if (!session) return
   session.close()
+}
+
+/**
+ * Register an externally-created session (e.g. from an adapter) into the
+ * shared sessions map so it can be looked up by the terminal route handlers.
+ */
+export function registerAdapterSession(session: TerminalSession, targetId: string): TerminalSession {
+  const tagged = { ...session, targetId }
+  sessions.set(session.id, tagged)
+  return tagged
+}
+
+/**
+ * Returns true when `expectedTargetId` is undefined (no target context, any
+ * session is fine) or when the session's targetId matches. Used by input/
+ * resize/close routes to reject cross-target session access.
+ */
+export function validateSessionTarget(
+  sessionId: string,
+  expectedTargetId: string | undefined,
+): boolean {
+  if (expectedTargetId === undefined) return true
+  const session = sessions.get(sessionId)
+  if (!session) return false
+  return session.targetId === expectedTargetId
 }

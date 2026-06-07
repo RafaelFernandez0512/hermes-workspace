@@ -116,6 +116,11 @@ import { Route as ApiAuthCheckRouteImport } from './routes/api/auth-check'
 import { Route as ApiAuthRouteImport } from './routes/api/auth'
 import { Route as ApiArtifactsRouteImport } from './routes/api/artifacts'
 import { Route as ApiAgentBusRouteImport } from './routes/api/agent-bus'
+import { Route as ApiWorkspaceTargetsUpsertRouteImport } from './routes/api/workspace-targets/upsert'
+import { Route as ApiWorkspaceTargetsTestRouteImport } from './routes/api/workspace-targets/test'
+import { Route as ApiWorkspaceTargetsListRouteImport } from './routes/api/workspace-targets/list'
+import { Route as ApiWorkspaceTargetsDeleteRouteImport } from './routes/api/workspace-targets/delete'
+import { Route as ApiWorkspaceTargetsActiveRouteImport } from './routes/api/workspace-targets/active'
 import { Route as ApiUpdateWorkspaceRouteImport } from './routes/api/update/workspace'
 import { Route as ApiUpdateStatusRouteImport } from './routes/api/update/status'
 import { Route as ApiUpdateAgentRouteImport } from './routes/api/update/agent'
@@ -717,6 +722,34 @@ const ApiAgentBusRoute = ApiAgentBusRouteImport.update({
   path: '/api/agent-bus',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWorkspaceTargetsUpsertRoute =
+  ApiWorkspaceTargetsUpsertRouteImport.update({
+    id: '/api/workspace-targets/upsert',
+    path: '/api/workspace-targets/upsert',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiWorkspaceTargetsTestRoute = ApiWorkspaceTargetsTestRouteImport.update({
+  id: '/api/workspace-targets/test',
+  path: '/api/workspace-targets/test',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWorkspaceTargetsListRoute = ApiWorkspaceTargetsListRouteImport.update({
+  id: '/api/workspace-targets/list',
+  path: '/api/workspace-targets/list',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWorkspaceTargetsDeleteRoute =
+  ApiWorkspaceTargetsDeleteRouteImport.update({
+    id: '/api/workspace-targets/delete',
+    path: '/api/workspace-targets/delete',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiWorkspaceTargetsActiveRoute =
+  ApiWorkspaceTargetsActiveRouteImport.update({
+    id: '/api/workspace-targets/active',
+    path: '/api/workspace-targets/active',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiUpdateWorkspaceRoute = ApiUpdateWorkspaceRouteImport.update({
   id: '/api/update/workspace',
   path: '/api/update/workspace',
@@ -1205,6 +1238,11 @@ export interface FileRoutesByFullPath {
   '/api/update/agent': typeof ApiUpdateAgentRoute
   '/api/update/status': typeof ApiUpdateStatusRoute
   '/api/update/workspace': typeof ApiUpdateWorkspaceRoute
+  '/api/workspace-targets/active': typeof ApiWorkspaceTargetsActiveRoute
+  '/api/workspace-targets/delete': typeof ApiWorkspaceTargetsDeleteRoute
+  '/api/workspace-targets/list': typeof ApiWorkspaceTargetsListRoute
+  '/api/workspace-targets/test': typeof ApiWorkspaceTargetsTestRoute
+  '/api/workspace-targets/upsert': typeof ApiWorkspaceTargetsUpsertRoute
   '/api/hermesworld/reservations/confirm': typeof ApiHermesworldReservationsConfirmRoute
   '/api/mcp/$name/logs': typeof ApiMcpNameLogsRoute
   '/api/mcp/hub-sources/$id': typeof ApiMcpHubSourcesIdRoute
@@ -1376,6 +1414,11 @@ export interface FileRoutesByTo {
   '/api/update/agent': typeof ApiUpdateAgentRoute
   '/api/update/status': typeof ApiUpdateStatusRoute
   '/api/update/workspace': typeof ApiUpdateWorkspaceRoute
+  '/api/workspace-targets/active': typeof ApiWorkspaceTargetsActiveRoute
+  '/api/workspace-targets/delete': typeof ApiWorkspaceTargetsDeleteRoute
+  '/api/workspace-targets/list': typeof ApiWorkspaceTargetsListRoute
+  '/api/workspace-targets/test': typeof ApiWorkspaceTargetsTestRoute
+  '/api/workspace-targets/upsert': typeof ApiWorkspaceTargetsUpsertRoute
   '/api/hermesworld/reservations/confirm': typeof ApiHermesworldReservationsConfirmRoute
   '/api/mcp/$name/logs': typeof ApiMcpNameLogsRoute
   '/api/mcp/hub-sources/$id': typeof ApiMcpHubSourcesIdRoute
@@ -1549,6 +1592,11 @@ export interface FileRoutesById {
   '/api/update/agent': typeof ApiUpdateAgentRoute
   '/api/update/status': typeof ApiUpdateStatusRoute
   '/api/update/workspace': typeof ApiUpdateWorkspaceRoute
+  '/api/workspace-targets/active': typeof ApiWorkspaceTargetsActiveRoute
+  '/api/workspace-targets/delete': typeof ApiWorkspaceTargetsDeleteRoute
+  '/api/workspace-targets/list': typeof ApiWorkspaceTargetsListRoute
+  '/api/workspace-targets/test': typeof ApiWorkspaceTargetsTestRoute
+  '/api/workspace-targets/upsert': typeof ApiWorkspaceTargetsUpsertRoute
   '/api/hermesworld/reservations/confirm': typeof ApiHermesworldReservationsConfirmRoute
   '/api/mcp/$name/logs': typeof ApiMcpNameLogsRoute
   '/api/mcp/hub-sources/$id': typeof ApiMcpHubSourcesIdRoute
@@ -1723,6 +1771,11 @@ export interface FileRouteTypes {
     | '/api/update/agent'
     | '/api/update/status'
     | '/api/update/workspace'
+    | '/api/workspace-targets/active'
+    | '/api/workspace-targets/delete'
+    | '/api/workspace-targets/list'
+    | '/api/workspace-targets/test'
+    | '/api/workspace-targets/upsert'
     | '/api/hermesworld/reservations/confirm'
     | '/api/mcp/$name/logs'
     | '/api/mcp/hub-sources/$id'
@@ -1894,6 +1947,11 @@ export interface FileRouteTypes {
     | '/api/update/agent'
     | '/api/update/status'
     | '/api/update/workspace'
+    | '/api/workspace-targets/active'
+    | '/api/workspace-targets/delete'
+    | '/api/workspace-targets/list'
+    | '/api/workspace-targets/test'
+    | '/api/workspace-targets/upsert'
     | '/api/hermesworld/reservations/confirm'
     | '/api/mcp/$name/logs'
     | '/api/mcp/hub-sources/$id'
@@ -2066,6 +2124,11 @@ export interface FileRouteTypes {
     | '/api/update/agent'
     | '/api/update/status'
     | '/api/update/workspace'
+    | '/api/workspace-targets/active'
+    | '/api/workspace-targets/delete'
+    | '/api/workspace-targets/list'
+    | '/api/workspace-targets/test'
+    | '/api/workspace-targets/upsert'
     | '/api/hermesworld/reservations/confirm'
     | '/api/mcp/$name/logs'
     | '/api/mcp/hub-sources/$id'
@@ -2212,6 +2275,11 @@ export interface RootRouteChildren {
   ApiUpdateAgentRoute: typeof ApiUpdateAgentRoute
   ApiUpdateStatusRoute: typeof ApiUpdateStatusRoute
   ApiUpdateWorkspaceRoute: typeof ApiUpdateWorkspaceRoute
+  ApiWorkspaceTargetsActiveRoute: typeof ApiWorkspaceTargetsActiveRoute
+  ApiWorkspaceTargetsDeleteRoute: typeof ApiWorkspaceTargetsDeleteRoute
+  ApiWorkspaceTargetsListRoute: typeof ApiWorkspaceTargetsListRoute
+  ApiWorkspaceTargetsTestRoute: typeof ApiWorkspaceTargetsTestRoute
+  ApiWorkspaceTargetsUpsertRoute: typeof ApiWorkspaceTargetsUpsertRoute
   ApiRunsSessionKeyRunIdAbandonRoute: typeof ApiRunsSessionKeyRunIdAbandonRoute
 }
 
@@ -2964,6 +3032,41 @@ declare module '@tanstack/react-router' {
       path: '/api/agent-bus'
       fullPath: '/api/agent-bus'
       preLoaderRoute: typeof ApiAgentBusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/workspace-targets/upsert': {
+      id: '/api/workspace-targets/upsert'
+      path: '/api/workspace-targets/upsert'
+      fullPath: '/api/workspace-targets/upsert'
+      preLoaderRoute: typeof ApiWorkspaceTargetsUpsertRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/workspace-targets/test': {
+      id: '/api/workspace-targets/test'
+      path: '/api/workspace-targets/test'
+      fullPath: '/api/workspace-targets/test'
+      preLoaderRoute: typeof ApiWorkspaceTargetsTestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/workspace-targets/list': {
+      id: '/api/workspace-targets/list'
+      path: '/api/workspace-targets/list'
+      fullPath: '/api/workspace-targets/list'
+      preLoaderRoute: typeof ApiWorkspaceTargetsListRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/workspace-targets/delete': {
+      id: '/api/workspace-targets/delete'
+      path: '/api/workspace-targets/delete'
+      fullPath: '/api/workspace-targets/delete'
+      preLoaderRoute: typeof ApiWorkspaceTargetsDeleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/workspace-targets/active': {
+      id: '/api/workspace-targets/active'
+      path: '/api/workspace-targets/active'
+      fullPath: '/api/workspace-targets/active'
+      preLoaderRoute: typeof ApiWorkspaceTargetsActiveRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/update/workspace': {
@@ -3804,6 +3907,11 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUpdateAgentRoute: ApiUpdateAgentRoute,
   ApiUpdateStatusRoute: ApiUpdateStatusRoute,
   ApiUpdateWorkspaceRoute: ApiUpdateWorkspaceRoute,
+  ApiWorkspaceTargetsActiveRoute: ApiWorkspaceTargetsActiveRoute,
+  ApiWorkspaceTargetsDeleteRoute: ApiWorkspaceTargetsDeleteRoute,
+  ApiWorkspaceTargetsListRoute: ApiWorkspaceTargetsListRoute,
+  ApiWorkspaceTargetsTestRoute: ApiWorkspaceTargetsTestRoute,
+  ApiWorkspaceTargetsUpsertRoute: ApiWorkspaceTargetsUpsertRoute,
   ApiRunsSessionKeyRunIdAbandonRoute: ApiRunsSessionKeyRunIdAbandonRoute,
 }
 export const routeTree = rootRouteImport

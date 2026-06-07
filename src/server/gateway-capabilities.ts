@@ -967,3 +967,44 @@ export function isClaudeConnected(): boolean {
 }
 
 void ensureGatewayProbed()
+
+// ── Per-request target overrides ──────────────────────────────────────────────
+// These functions are imported by resolver.ts, responses-api.ts, etc.
+// They read the ALS target context (set by middleware) and fall back to the
+// module-level CLAUDE_API / CLAUDE_DASHBOARD_URL when no target is active.
+// context.ts and store.ts are imported lazily to avoid circular dependencies
+// at module-evaluation time (gateway-capabilities → store → fs → ... → gateway).
+
+export function getActiveGatewayUrl(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getActiveTargetIdFromAls } = require('./workspace-targets/context') as typeof import('./workspace-targets/context')
+    const id = getActiveTargetIdFromAls()
+    if (!id) return CLAUDE_API
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getTargetsCacheSync } = require('./workspace-targets/store') as typeof import('./workspace-targets/store')
+    const cache = getTargetsCacheSync()
+    if (!cache) return CLAUDE_API
+    const target = cache.targets.find((t) => t.id === id)
+    return target?.hermes?.gatewayUrl || CLAUDE_API
+  } catch {
+    return CLAUDE_API
+  }
+}
+
+export function getActiveDashboardUrl(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getActiveTargetIdFromAls } = require('./workspace-targets/context') as typeof import('./workspace-targets/context')
+    const id = getActiveTargetIdFromAls()
+    if (!id) return CLAUDE_DASHBOARD_URL
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getTargetsCacheSync } = require('./workspace-targets/store') as typeof import('./workspace-targets/store')
+    const cache = getTargetsCacheSync()
+    if (!cache) return CLAUDE_DASHBOARD_URL
+    const target = cache.targets.find((t) => t.id === id)
+    return target?.hermes?.dashboardUrl || CLAUDE_DASHBOARD_URL
+  } catch {
+    return CLAUDE_DASHBOARD_URL
+  }
+}
