@@ -6,10 +6,10 @@ import { json } from '@tanstack/react-start'
 import { isAuthenticated } from '../../server/auth-middleware'
 import {
   BEARER_TOKEN,
-  CLAUDE_API,
   CLAUDE_UPGRADE_INSTRUCTIONS,
   dashboardFetch,
   ensureGatewayProbed,
+  getActiveGatewayUrl,
   getCapabilities,
 } from '../../server/gateway-capabilities'
 import { requireJsonContentType } from '../../server/rate-limit'
@@ -366,7 +366,7 @@ async function fetchClaudeSkills(): Promise<Array<SkillSummary>> {
 
   const response = capabilities.dashboard.available
     ? await dashboardFetch('/api/skills')
-    : await fetch(`${CLAUDE_API}/api/skills`, { headers })
+    : await fetch(`${getActiveGatewayUrl()}/api/skills`, { headers })
   if (!response.ok) {
     const body = await response.text().catch(() => '')
     throw new Error(body || `Claude skills request failed (${response.status})`)
@@ -602,7 +602,7 @@ export const Route = createFileRoute('/api/skills')({
           }
           if (BEARER_TOKEN) headers['Authorization'] = `Bearer ${BEARER_TOKEN}`
 
-          const response = await fetch(`${CLAUDE_API}${endpoint}`, {
+          const response = await fetch(`${getActiveGatewayUrl()}${endpoint}`, {
             method: 'POST',
             headers,
             body: JSON.stringify(payload),

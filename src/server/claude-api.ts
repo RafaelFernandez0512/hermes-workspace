@@ -11,6 +11,7 @@ import {
   SESSIONS_API_UNAVAILABLE_MESSAGE,
   dashboardFetch,
   ensureGatewayProbed,
+  getActiveGatewayUrl,
   getCapabilities,
   probeGateway,
 } from './gateway-capabilities'
@@ -72,7 +73,7 @@ export type ClaudeConfig = {
 // ── Helpers ───────────────────────────────────────────────────────
 
 async function claudeGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${CLAUDE_API}${path}`, { headers: _authHeaders() })
+  const res = await fetch(`${getActiveGatewayUrl()}${path}`, { headers: _authHeaders() })
   if (!res.ok) {
     const body = await res.text().catch(() => '')
     throw new Error(`Hermes Agent API ${path}: ${res.status} ${body}`)
@@ -81,7 +82,7 @@ async function claudeGet<T>(path: string): Promise<T> {
 }
 
 async function claudePost<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${CLAUDE_API}${path}`, {
+  const res = await fetch(`${getActiveGatewayUrl()}${path}`, {
     method: 'POST',
     headers: { ..._authHeaders(), 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
@@ -94,7 +95,7 @@ async function claudePost<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function claudePatch<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${CLAUDE_API}${path}`, {
+  const res = await fetch(`${getActiveGatewayUrl()}${path}`, {
     method: 'PATCH',
     headers: { ..._authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -107,7 +108,7 @@ async function claudePatch<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function claudeDeleteReq(path: string): Promise<void> {
-  const res = await fetch(`${CLAUDE_API}${path}`, {
+  const res = await fetch(`${getActiveGatewayUrl()}${path}`, {
     method: 'DELETE',
     headers: _authHeaders(),
   })
@@ -381,7 +382,7 @@ export async function streamChat(
   opts: StreamChatOptions,
 ): Promise<void> {
   const res = await fetch(
-    `${CLAUDE_API}/api/sessions/${sessionId}/chat/stream`,
+    `${getActiveGatewayUrl()}/api/sessions/${sessionId}/chat/stream`,
     {
       method: 'POST',
       headers: { ..._authHeaders(), 'Content-Type': 'application/json' },
@@ -548,7 +549,7 @@ export async function listModels(): Promise<{
 
 export async function isClaudeAvailable(): Promise<boolean> {
   try {
-    const res = await fetch(`${CLAUDE_API}/health`, {
+    const res = await fetch(`${getActiveGatewayUrl()}/health`, {
       signal: AbortSignal.timeout(3000),
     })
     if (!res.ok) {

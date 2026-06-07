@@ -7,7 +7,7 @@
  */
 import { createFileRoute } from '@tanstack/react-router'
 import { isAuthenticated } from '../../server/auth-middleware'
-import { BEARER_TOKEN, CLAUDE_API, CLAUDE_DASHBOARD_URL } from '../../server/gateway-capabilities'
+import { BEARER_TOKEN, getActiveDashboardUrl, getActiveGatewayUrl } from '../../server/gateway-capabilities'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
@@ -133,8 +133,8 @@ export const Route = createFileRoute('/api/claude-tasks-assignees')({
         // Hermes kanban CLI and includes ~/.hermes/profiles plus assignees
         // already present on the board.
         const remotePayload =
-          await fetchJson(`${CLAUDE_DASHBOARD_URL}/api/plugins/kanban/assignees`) ??
-          await fetchJson(`${CLAUDE_API}/api/tasks/assignees`)
+          await fetchJson(`${getActiveDashboardUrl()}/api/plugins/kanban/assignees`) ??
+          await fetchJson(`${getActiveGatewayUrl()}/api/tasks/assignees`)
         const remoteAssignees = remotePayload
           ? normalizeAssigneePayload(remotePayload, humanReviewer)
           : []

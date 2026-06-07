@@ -3,9 +3,9 @@ import { json } from '@tanstack/react-start'
 import { isAuthenticated } from '../../../server/auth-middleware'
 import {
   BEARER_TOKEN,
-  CLAUDE_API,
   dashboardFetch,
   ensureGatewayProbed,
+  getActiveGatewayUrl,
 } from '../../../server/gateway-capabilities'
 
 function authHeaders(): Record<string, string> {
@@ -52,7 +52,7 @@ export const Route = createFileRoute('/api/skills/toggle')({
                 }),
                 signal: AbortSignal.timeout(15_000),
               })
-            : await fetch(`${CLAUDE_API}/api/skills/toggle`, {
+            : await fetch(`${getActiveGatewayUrl()}/api/skills/toggle`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',

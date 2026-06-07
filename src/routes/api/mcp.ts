@@ -3,10 +3,10 @@ import { json } from '@tanstack/react-start'
 import { isAuthenticated } from '../../server/auth-middleware'
 import {
   BEARER_TOKEN,
-  CLAUDE_API,
   CLAUDE_UPGRADE_INSTRUCTIONS,
   dashboardFetch,
   ensureGatewayProbed,
+  getActiveGatewayUrl,
   getCapabilities,
 } from '../../server/gateway-capabilities'
 import { requireJsonContentType, safeErrorMessage } from '../../server/rate-limit'
@@ -35,7 +35,7 @@ async function mcpFetch(path: string, init: RequestInit = {}): Promise<Response>
   if (BEARER_TOKEN && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${BEARER_TOKEN}`)
   }
-  return fetch(`${CLAUDE_API}${path}`, { ...init, headers })
+  return fetch(`${getActiveGatewayUrl()}${path}`, { ...init, headers })
 }
 
 function unavailableListPayload() {

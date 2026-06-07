@@ -5,7 +5,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import * as yaml from 'yaml'
-import { BEARER_TOKEN, CLAUDE_API, ensureGatewayProbed } from '../../server/gateway-capabilities'
+import { BEARER_TOKEN, ensureGatewayProbed, getActiveGatewayUrl } from '../../server/gateway-capabilities'
 import { getClaudeRoot, getProfileClaudeHome, getWorkspaceClaudeHome } from '../../server/claude-paths'
 import { listSwarmWorkerIds } from '../../server/swarm-foundation'
 import { formatSwarmWorkerLabel, rosterByWorkerId, type SwarmRosterWorker } from '../../server/swarm-roster'
@@ -226,7 +226,7 @@ function readCronJobCount(claudeHome: string): number {
 
 async function fetchAssignedTaskCounts(): Promise<Record<string, number>> {
   try {
-    const res = await fetch(`${CLAUDE_API}/api/tasks?include_done=false`, {
+    const res = await fetch(`${getActiveGatewayUrl()}/api/tasks?include_done=false`, {
       signal: AbortSignal.timeout(3_000),
       headers: BEARER_TOKEN ? { Authorization: `Bearer ${BEARER_TOKEN}` } : {},
     })

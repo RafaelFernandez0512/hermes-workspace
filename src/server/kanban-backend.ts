@@ -12,7 +12,7 @@ import {
   updateSwarmKanbanCard,
   type UpdateSwarmKanbanCardInput,
 } from './swarm-kanban-store'
-import { CLAUDE_DASHBOARD_URL, getCapabilities } from './gateway-capabilities'
+import { getActiveDashboardUrl, getCapabilities } from './gateway-capabilities'
 import {
   fetchDashboardKanbanBoard,
   fetchDashboardKanbanTaskDetail,
@@ -579,7 +579,7 @@ const dashboardProxyBackend: KanbanBackend = {
       label: 'Hermes Dashboard kanban',
       detected: caps.kanban,
       writable: caps.kanban,
-      path: caps.dashboard.url || CLAUDE_DASHBOARD_URL,
+      path: caps.dashboard.url || getActiveDashboardUrl(),
       details: caps.kanban
         ? `Synced with the Hermes Dashboard kanban plugin at ${caps.dashboard.url}/kanban (single SQLite source of truth, dispatcher-aware).`
         : 'Hermes Dashboard kanban plugin not detected.',

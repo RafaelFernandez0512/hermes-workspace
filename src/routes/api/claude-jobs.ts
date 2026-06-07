@@ -5,10 +5,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { isAuthenticated } from '../../server/auth-middleware'
 import {
   BEARER_TOKEN,
-  CLAUDE_API,
   CLAUDE_UPGRADE_INSTRUCTIONS,
   dashboardFetch,
   ensureGatewayProbed,
+  getActiveGatewayUrl,
 } from '../../server/gateway-capabilities'
 import {
   createProfileCronJob,
@@ -81,7 +81,7 @@ export const Route = createFileRoute('/api/claude-jobs')({
         const params = url.searchParams.toString()
         const res = capabilities.dashboard.available
           ? await dashboardFetch(`/api/cron/jobs${params ? `?${params}` : ''}`)
-          : await fetch(`${CLAUDE_API}/api/jobs${params ? `?${params}` : ''}`, {
+          : await fetch(`${getActiveGatewayUrl()}/api/jobs${params ? `?${params}` : ''}`, {
               headers: authHeaders(),
             })
         return jobsResponse(res)
@@ -140,7 +140,7 @@ export const Route = createFileRoute('/api/claude-jobs')({
               headers: { 'Content-Type': 'application/json' },
               body,
             })
-          : await fetch(`${CLAUDE_API}/api/jobs`, {
+          : await fetch(`${getActiveGatewayUrl()}/api/jobs`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', ...authHeaders() },
               body,

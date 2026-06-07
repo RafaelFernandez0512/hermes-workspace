@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { CLAUDE_API } from './gateway-capabilities'
+import { getActiveGatewayUrl } from './gateway-capabilities'
 
 /**
  * Optional bearer token for authenticated OpenAI-compatible endpoints
@@ -53,7 +53,7 @@ async function getDefaultModel(): Promise<string> {
     const headers: Record<string, string> = {}
     const bearer = getBearerToken()
     if (bearer) headers['Authorization'] = `Bearer ${bearer}`
-    const res = await fetch(`${CLAUDE_API}/v1/models`, {
+    const res = await fetch(`${getActiveGatewayUrl()}/v1/models`, {
       headers,
       signal: AbortSignal.timeout(3_000),
     })
@@ -303,7 +303,7 @@ export async function openaiChat(
 
   const endpoint = options.baseUrl
     ? `${options.baseUrl.replace(/\/+$/, '')}/chat/completions`
-    : `${CLAUDE_API}/v1/chat/completions`
+    : `${getActiveGatewayUrl()}/v1/chat/completions`
   const response = await fetch(endpoint, {
     method: 'POST',
     headers,

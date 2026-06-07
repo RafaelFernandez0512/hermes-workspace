@@ -18,7 +18,7 @@
  * `send-stream.ts` can translate to its existing `tool.*` events without
  * caring about Responses-spec quirks.
  */
-import { BEARER_TOKEN, CLAUDE_API } from './gateway-capabilities'
+import { BEARER_TOKEN, getActiveGatewayUrl } from './gateway-capabilities'
 
 export type ResponsesStreamEvent =
   | { kind: 'text.delta'; delta: string }
@@ -123,7 +123,7 @@ export async function* streamResponses(
   if (req.model) body.model = req.model
   if (req.sessionId) body.session_id = req.sessionId
 
-  const res = await fetch(`${CLAUDE_API}/v1/responses`, {
+  const res = await fetch(`${getActiveGatewayUrl()}/v1/responses`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),

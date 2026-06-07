@@ -25,7 +25,7 @@
  * See v2.3.0 plan.
  */
 import {
-  CLAUDE_DASHBOARD_URL,
+  getActiveDashboardUrl,
   fetchDashboardToken,
 } from './gateway-capabilities'
 
@@ -105,7 +105,7 @@ async function buildHeaders(): Promise<Record<string, string>> {
 }
 
 function dashboardUrl(path: string, params: Record<string, string | undefined> = {}): string {
-  const base = CLAUDE_DASHBOARD_URL.replace(/\/+$/, '')
+  const base = getActiveDashboardUrl().replace(/\/+$/, '')
   const url = new URL(`${base}${path}`)
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== '') url.searchParams.set(key, value)

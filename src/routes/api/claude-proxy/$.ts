@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { BEARER_TOKEN, CLAUDE_API } from '../../../server/gateway-capabilities'
+import { BEARER_TOKEN, getActiveGatewayUrl } from '../../../server/gateway-capabilities'
 import { isAuthenticated } from '../../../server/auth-middleware'
 
 /**
@@ -21,7 +21,7 @@ async function fallbackAvailableModels(
   authHeaders: Record<string, string>,
 ): Promise<Response> {
   try {
-    const res = await fetch(`${CLAUDE_API}/v1/models`, { headers: authHeaders })
+    const res = await fetch(`${getActiveGatewayUrl()}/v1/models`, { headers: authHeaders })
     if (!res.ok) {
       return new Response(JSON.stringify({ models: [] }), {
         status: 200,
@@ -61,7 +61,7 @@ async function fallbackAvailableModels(
 async function proxyRequest(request: Request, splat: string) {
   const incomingUrl = new URL(request.url)
   const targetPath = splat.startsWith('/') ? splat : `/${splat}`
-  const targetUrl = new URL(`${CLAUDE_API}${targetPath}`)
+  const targetUrl = new URL(`${getActiveGatewayUrl()}${targetPath}`)
   targetUrl.search = incomingUrl.search
 
   const headers = new Headers(request.headers)

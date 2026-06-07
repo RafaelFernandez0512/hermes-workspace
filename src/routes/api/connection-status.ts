@@ -9,8 +9,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import YAML from 'yaml'
 import {
-  CLAUDE_API,
   ensureGatewayProbed,
+  getActiveGatewayUrl,
   getChatMode,
 } from '../../server/gateway-capabilities'
 import { isAuthenticated } from '../../server/auth-middleware'
@@ -135,7 +135,7 @@ export const Route = createFileRoute('/api/connection-status')({
             enhancedChat: caps.enhancedChat,
             dashboard: caps.dashboard.available,
           },
-          claudeUrl: CLAUDE_API,
+          claudeUrl: getActiveGatewayUrl(),
         }
 
         return Response.json(body)

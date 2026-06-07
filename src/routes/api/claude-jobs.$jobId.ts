@@ -6,10 +6,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { isAuthenticated } from '../../server/auth-middleware'
 import {
   BEARER_TOKEN,
-  CLAUDE_API,
   CLAUDE_UPGRADE_INSTRUCTIONS,
   dashboardFetch,
   ensureGatewayProbed,
+  getActiveGatewayUrl,
 } from '../../server/gateway-capabilities'
 import {
   createProfileCronJob,
@@ -75,8 +75,8 @@ export const Route = createFileRoute('/api/claude-jobs/$jobId')({
         }
 
         const target = action
-          ? `${CLAUDE_API}/api/jobs/${params.jobId}/${action}${url.search}`
-          : `${CLAUDE_API}/api/jobs/${params.jobId}`
+          ? `${getActiveGatewayUrl()}/api/jobs/${params.jobId}/${action}${url.search}`
+          : `${getActiveGatewayUrl()}/api/jobs/${params.jobId}`
         const res = await fetch(target, { headers: authHeaders() })
         return new Response(await res.text(), {
           status: res.status,
@@ -157,8 +157,8 @@ export const Route = createFileRoute('/api/claude-jobs/$jobId')({
         }
 
         const target = action
-          ? `${CLAUDE_API}/api/jobs/${params.jobId}/${action}`
-          : `${CLAUDE_API}/api/jobs/${params.jobId}`
+          ? `${getActiveGatewayUrl()}/api/jobs/${params.jobId}/${action}`
+          : `${getActiveGatewayUrl()}/api/jobs/${params.jobId}`
         const res = await fetch(target, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -248,7 +248,7 @@ export const Route = createFileRoute('/api/claude-jobs/$jobId')({
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ updates: body ? JSON.parse(body) : {} }),
             })
-          : await fetch(`${CLAUDE_API}/api/jobs/${params.jobId}`, {
+          : await fetch(`${getActiveGatewayUrl()}/api/jobs/${params.jobId}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json', ...authHeaders() },
               body,
@@ -293,7 +293,7 @@ export const Route = createFileRoute('/api/claude-jobs/$jobId')({
           ? await dashboardFetch(`/api/cron/jobs/${params.jobId}`, {
               method: 'DELETE',
             })
-          : await fetch(`${CLAUDE_API}/api/jobs/${params.jobId}`, {
+          : await fetch(`${getActiveGatewayUrl()}/api/jobs/${params.jobId}`, {
               method: 'DELETE',
               headers: authHeaders(),
             })

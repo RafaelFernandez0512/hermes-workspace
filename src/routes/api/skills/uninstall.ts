@@ -3,8 +3,8 @@ import { json } from '@tanstack/react-start'
 import { isAuthenticated } from '../../../server/auth-middleware'
 import {
   BEARER_TOKEN,
-  CLAUDE_API,
   ensureGatewayProbed,
+  getActiveGatewayUrl,
 } from '../../../server/gateway-capabilities'
 
 function authHeaders(): Record<string, string> {
@@ -43,7 +43,7 @@ export const Route = createFileRoute('/api/skills/uninstall')({
             )
           }
 
-          const response = await fetch(`${CLAUDE_API}/api/skills/uninstall`, {
+          const response = await fetch(`${getActiveGatewayUrl()}/api/skills/uninstall`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

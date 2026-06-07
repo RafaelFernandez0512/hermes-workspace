@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import {
-  CLAUDE_API,
   ensureGatewayProbed,
+  getActiveGatewayUrl,
 } from '../../server/gateway-capabilities'
 import { requireLocalOrAuth } from '../../server/auth-middleware'
 
@@ -22,7 +22,7 @@ export const Route = createFileRoute('/api/ping')({
               ok: false,
               error: 'Authentication required',
               status: 401,
-              claudeUrl: CLAUDE_API,
+              claudeUrl: getActiveGatewayUrl(),
             } satisfies PingResponse,
             { status: 401 },
           )
@@ -35,7 +35,7 @@ export const Route = createFileRoute('/api/ping')({
               ok: false,
               error: 'Hermes Agent unavailable',
               status: 503,
-              claudeUrl: CLAUDE_API,
+              claudeUrl: getActiveGatewayUrl(),
             } satisfies PingResponse,
             { status: 503 },
           )
@@ -45,7 +45,7 @@ export const Route = createFileRoute('/api/ping')({
           {
             ok: true,
             status: 200,
-            claudeUrl: CLAUDE_API,
+            claudeUrl: getActiveGatewayUrl(),
           } satisfies PingResponse,
           { status: 200 },
         )

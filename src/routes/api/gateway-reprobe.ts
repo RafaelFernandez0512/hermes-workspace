@@ -11,9 +11,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import {
-  CLAUDE_API,
-  CLAUDE_DASHBOARD_URL,
   forceReprobeGateway,
+  getActiveDashboardUrl,
+  getActiveGatewayUrl,
   getGatewayMode,
 } from '../../server/gateway-capabilities'
 import { isAuthenticated } from '../../server/auth-middleware'
@@ -31,11 +31,11 @@ export const Route = createFileRoute('/api/gateway-reprobe')({
           ok: true,
           capabilities,
           mode: getGatewayMode(),
-          claudeUrl: CLAUDE_API,
-          dashboardUrl: CLAUDE_DASHBOARD_URL,
+          claudeUrl: getActiveGatewayUrl(),
+          dashboardUrl: getActiveDashboardUrl(),
           gateway: {
             available: capabilities.health || capabilities.chatCompletions,
-            url: CLAUDE_API,
+            url: getActiveGatewayUrl(),
           },
           dashboard: capabilities.dashboard,
         })
