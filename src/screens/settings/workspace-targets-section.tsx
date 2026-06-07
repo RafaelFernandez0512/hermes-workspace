@@ -8,14 +8,19 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 function generateId(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 63) || `target-${Date.now()}`
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 63) || `target-${Date.now()}`
+  )
 }
 
-type TestState = Record<string, { loading: boolean; result?: TargetTestResult; error?: string }>
+type TestState = Record<
+  string,
+  { loading: boolean; result?: TargetTestResult; error?: string }
+>
 
 export function WorkspaceTargetsSection() {
   const { targets, activeTargetId, isLoaded, load, setActive, upsert, remove } =
@@ -35,7 +40,10 @@ export function WorkspaceTargetsSection() {
     } catch (err) {
       setTests((prev) => ({
         ...prev,
-        [id]: { loading: false, error: err instanceof Error ? err.message : String(err) },
+        [id]: {
+          loading: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
       }))
     }
   }
@@ -54,7 +62,9 @@ export function WorkspaceTargetsSection() {
     setEditing(null)
   }
 
-  const probeIcon = (r: { ok?: boolean; skipped?: boolean; error?: string } | undefined) => {
+  const probeIcon = (
+    r: { ok?: boolean; skipped?: boolean; error?: string } | undefined,
+  ) => {
     if (!r) return '○'
     if ('skipped' in r && r.skipped) return '–'
     if (r.ok) return '✓'
@@ -66,21 +76,35 @@ export function WorkspaceTargetsSection() {
       <div>
         <h2 className="text-lg font-semibold">Workspace Targets</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Configure remote PCs that Hermes Workspace can connect to for Terminal, Files, and Hermes Agent.
+          Configure remote PCs that Hermes Workspace can connect to for
+          Terminal, Files, and Hermes Agent.
         </p>
+        {activeTargetId && (
+          <p className="text-xs text-amber-400/80 mt-1">
+            Active for this profile:{' '}
+            <span className="font-medium">
+              {targets.find((t) => t.id === activeTargetId)?.name ??
+                activeTargetId}
+            </span>
+          </p>
+        )}
       </div>
 
       {/* Target list */}
       <div className="flex flex-col gap-2">
         {targets.length === 0 && (
-          <p className="text-sm text-muted-foreground">No targets configured. Add one below.</p>
+          <p className="text-sm text-muted-foreground">
+            No targets configured. Add one below.
+          </p>
         )}
         {targets.map((t) => (
           <div
             key={t.id}
             className={cn(
               'border rounded-lg p-3 flex flex-col gap-2',
-              activeTargetId === t.id ? 'border-amber-500/50 bg-amber-950/20' : 'border-border',
+              activeTargetId === t.id
+                ? 'border-amber-500/50 bg-amber-950/20'
+                : 'border-border',
             )}
           >
             <div className="flex items-center justify-between">
@@ -88,19 +112,25 @@ export function WorkspaceTargetsSection() {
                 <span
                   className={cn(
                     'w-2 h-2 rounded-full',
-                    activeTargetId === t.id ? 'bg-amber-400' : 'bg-muted-foreground/40',
+                    activeTargetId === t.id
+                      ? 'bg-amber-400'
+                      : 'bg-muted-foreground/40',
                   )}
                 />
                 <span className="font-medium text-sm">{t.name}</span>
                 {t.description && (
-                  <span className="text-xs text-muted-foreground">{t.description}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {t.description}
+                  </span>
                 )}
               </div>
               <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setActive(activeTargetId === t.id ? undefined : t.id)}
+                  onClick={() =>
+                    setActive(activeTargetId === t.id ? undefined : t.id)
+                  }
                 >
                   {activeTargetId === t.id ? 'Deactivate' : 'Activate'}
                 </Button>
@@ -162,21 +192,30 @@ export function WorkspaceTargetsSection() {
         ))}
       </div>
 
-      <Button variant="outline" size="sm" className="self-start" onClick={() => setEditing({})}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="self-start"
+        onClick={() => setEditing({})}
+      >
         + Add Target
       </Button>
 
       {/* Edit form */}
       {editing !== null && (
         <div className="border border-border rounded-lg p-4 flex flex-col gap-4">
-          <h3 className="font-medium text-sm">{editing.id ? 'Edit Target' : 'New Target'}</h3>
+          <h3 className="font-medium text-sm">
+            {editing.id ? 'Edit Target' : 'New Target'}
+          </h3>
 
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-sm">
               Name *
               <Input
                 value={editing.name ?? ''}
-                onChange={(e) => setEditing((v) => ({ ...v, name: e.target.value }))}
+                onChange={(e) =>
+                  setEditing((v) => ({ ...v, name: e.target.value }))
+                }
                 placeholder="My Remote PC"
               />
             </label>
@@ -184,14 +223,18 @@ export function WorkspaceTargetsSection() {
               Description
               <Input
                 value={editing.description ?? ''}
-                onChange={(e) => setEditing((v) => ({ ...v, description: e.target.value }))}
+                onChange={(e) =>
+                  setEditing((v) => ({ ...v, description: e.target.value }))
+                }
                 placeholder="Optional note"
               />
             </label>
           </div>
 
           <fieldset className="border border-border/50 rounded p-3 flex flex-col gap-2">
-            <legend className="text-xs font-semibold px-1">Hermes Agent (optional)</legend>
+            <legend className="text-xs font-semibold px-1">
+              Hermes Agent (optional)
+            </legend>
             <div className="grid grid-cols-2 gap-3">
               <label className="flex flex-col gap-1 text-xs">
                 Gateway URL
@@ -246,7 +289,10 @@ export function WorkspaceTargetsSection() {
                   onChange={() =>
                     setEditing((v) => ({
                       ...v,
-                      terminal: { mode: 'ssh', ssh: v?.terminal?.ssh ?? { host: '', user: '' } },
+                      terminal: {
+                        mode: 'ssh',
+                        ssh: v?.terminal?.ssh ?? { host: '', user: '' },
+                      },
                     }))
                   }
                 />
@@ -264,7 +310,11 @@ export function WorkspaceTargetsSection() {
                         ...v,
                         terminal: {
                           mode: 'ssh',
-                          ssh: { ...v?.terminal?.ssh, host: e.target.value, user: v?.terminal?.ssh?.user ?? '' },
+                          ssh: {
+                            ...v?.terminal?.ssh,
+                            host: e.target.value,
+                            user: v?.terminal?.ssh?.user ?? '',
+                          },
                         },
                       }))
                     }
@@ -280,7 +330,11 @@ export function WorkspaceTargetsSection() {
                         ...v,
                         terminal: {
                           mode: 'ssh',
-                          ssh: { ...v?.terminal?.ssh, user: e.target.value, host: v?.terminal?.ssh?.host ?? '' },
+                          ssh: {
+                            ...v?.terminal?.ssh,
+                            user: e.target.value,
+                            host: v?.terminal?.ssh?.host ?? '',
+                          },
                         },
                       }))
                     }
@@ -296,7 +350,12 @@ export function WorkspaceTargetsSection() {
                         ...v,
                         terminal: {
                           mode: 'ssh',
-                          ssh: { ...v?.terminal?.ssh, keyPath: e.target.value, host: v?.terminal?.ssh?.host ?? '', user: v?.terminal?.ssh?.user ?? '' },
+                          ssh: {
+                            ...v?.terminal?.ssh,
+                            keyPath: e.target.value,
+                            host: v?.terminal?.ssh?.host ?? '',
+                            user: v?.terminal?.ssh?.user ?? '',
+                          },
                         },
                       }))
                     }
@@ -316,7 +375,9 @@ export function WorkspaceTargetsSection() {
                   name="files-mode"
                   value="local"
                   checked={(editing.files?.mode ?? 'local') === 'local'}
-                  onChange={() => setEditing((v) => ({ ...v, files: { mode: 'local' } }))}
+                  onChange={() =>
+                    setEditing((v) => ({ ...v, files: { mode: 'local' } }))
+                  }
                 />
                 Local
               </label>
@@ -331,7 +392,11 @@ export function WorkspaceTargetsSection() {
                       ...v,
                       files: {
                         mode: 'sftp',
-                        sftp: v?.files?.sftp ?? { host: '', user: '', rootPath: '' },
+                        sftp: v?.files?.sftp ?? {
+                          host: '',
+                          user: '',
+                          rootPath: '',
+                        },
                       },
                     }))
                   }
@@ -350,7 +415,12 @@ export function WorkspaceTargetsSection() {
                         ...v,
                         files: {
                           mode: 'sftp',
-                          sftp: { ...v?.files?.sftp, host: e.target.value, user: v?.files?.sftp?.user ?? '', rootPath: v?.files?.sftp?.rootPath ?? '' },
+                          sftp: {
+                            ...v?.files?.sftp,
+                            host: e.target.value,
+                            user: v?.files?.sftp?.user ?? '',
+                            rootPath: v?.files?.sftp?.rootPath ?? '',
+                          },
                         },
                       }))
                     }
@@ -366,7 +436,12 @@ export function WorkspaceTargetsSection() {
                         ...v,
                         files: {
                           mode: 'sftp',
-                          sftp: { ...v?.files?.sftp, user: e.target.value, host: v?.files?.sftp?.host ?? '', rootPath: v?.files?.sftp?.rootPath ?? '' },
+                          sftp: {
+                            ...v?.files?.sftp,
+                            user: e.target.value,
+                            host: v?.files?.sftp?.host ?? '',
+                            rootPath: v?.files?.sftp?.rootPath ?? '',
+                          },
                         },
                       }))
                     }
@@ -382,7 +457,12 @@ export function WorkspaceTargetsSection() {
                         ...v,
                         files: {
                           mode: 'sftp',
-                          sftp: { ...v?.files?.sftp, rootPath: e.target.value, host: v?.files?.sftp?.host ?? '', user: v?.files?.sftp?.user ?? '' },
+                          sftp: {
+                            ...v?.files?.sftp,
+                            rootPath: e.target.value,
+                            host: v?.files?.sftp?.host ?? '',
+                            user: v?.files?.sftp?.user ?? '',
+                          },
                         },
                       }))
                     }

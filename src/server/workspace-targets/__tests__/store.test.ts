@@ -10,6 +10,15 @@ vi.mock('../../workspace-state-dir', () => ({
   getStateDir: () => tmpDir,
 }))
 
+// profiles-browser mock — overridden per test as needed.
+const mockGetActiveProfileName = vi.fn(() => 'default')
+const mockReadProfile = vi.fn()
+
+vi.mock('../../profiles-browser', () => ({
+  getActiveProfileName: () => mockGetActiveProfileName(),
+  readProfile: (name: string) => mockReadProfile(name),
+}))
+
 // Import after mock setup so the FILE path picks up our tmpDir.
 // We use dynamic import to ensure the mocked module is used.
 const storeModule = () => import('../store')
@@ -40,7 +49,14 @@ describe('saveTargetsFile + loadTargetsFile roundtrip', () => {
         {
           id: 'pc1',
           name: 'Office PC',
-          terminal: { mode: 'ssh' as const, ssh: { host: '10.0.0.1', user: 'alice', keyPath: '~/.ssh/id_ed25519' } },
+          terminal: {
+            mode: 'ssh' as const,
+            ssh: {
+              host: '10.0.0.1',
+              user: 'alice',
+              keyPath: '~/.ssh/id_ed25519',
+            },
+          },
         },
       ],
     }
@@ -82,7 +98,8 @@ describe('upsertTarget', () => {
 
 describe('deleteTarget', () => {
   it('removes the target and clears activeTargetId when it matches', async () => {
-    const { upsertTarget, setActiveTargetId, deleteTarget, loadTargetsFile } = await storeModule()
+    const { upsertTarget, setActiveTargetId, deleteTarget, loadTargetsFile } =
+      await storeModule()
     await upsertTarget({ id: 'del-me', name: 'Temp' })
     await setActiveTargetId('del-me')
     await deleteTarget('del-me')
@@ -97,7 +114,67 @@ describe('Zod rejects invalid data', () => {
     const { loadTargetsFile } = await storeModule()
     const filepath = path.join(tmpDir, 'workspace-targets.json')
     await fs.mkdir(tmpDir, { recursive: true })
-    await fs.writeFile(filepath, JSON.stringify({ version: 'bad', targets: 'not-an-array' }))
+    await fs.writeFile(
+      filepath,
+      JSON.stringify({ version: 'bad', targets: 'not-an-array' }),
+    )
     await expect(loadTargetsFile()).rejects.toThrow()
+  })
+})
+
+describe('getActiveTargetIdResolved', () => {
+  beforeEach(() => {
+    mockGetActiveProfileName.mockReturnValue('default')
+    mockReadProfile.mockReturnValue({ workspaceTargetId: undefined })
+  })
+
+  it('returns profile workspaceTargetId when active profile has one set', async () => {
+    const { upsertTarget, getActiveTargetIdResolved } = await storeModule()
+    await upsertTarget({ id: 'pc-gaming', name: 'PC Gaming' })
+    mockGetActiveProfileName.mockReturnValue('gamer')
+    mockReadProfile.mockReturnValue({ workspaceTargetId: 'pc-gaming' })
+    const resolved = await getActiveTargetIdResolved()
+    expect(resolved).toBe('pc-gaming')
+  })
+
+  it('falls back to global activeTargetId when active profile has no workspaceTargetId', async () => {
+    const { upsertTarget, setActiveTargetId, getActiveTargetIdResolved } =
+      await storeModule()
+    await upsertTarget({ id: 'server-dev', name: 'Server Dev' })
+    await setActiveTargetId('server-dev')
+    mockGetActiveProfileName.mockReturnValue('dev')
+    mockReadProfile.mockReturnValue({ workspaceTargetId: undefined })
+    const resolved = await getActiveTargetIdResolved()
+    expect(resolved).toBe('server-dev')
+  })
+
+  it('falls back to global activeTargetId when profile is default', async () => {
+    const { upsertTarget, setActiveTargetId, getActiveTargetIdResolved } =
+      await storeModule()
+    await upsertTarget({ id: 'server-dev', name: 'Server Dev' })
+    await setActiveTargetId('server-dev')
+    mockGetActiveProfileName.mockReturnValue('default')
+    const resolved = await getActiveTargetIdResolved()
+    expect(resolved).toBe('server-dev')
+  })
+
+  it('falls back to global when readProfile throws', async () => {
+    const { upsertTarget, setActiveTargetId, getActiveTargetIdResolved } =
+      await storeModule()
+    await upsertTarget({ id: 'server-dev', name: 'Server Dev' })
+    await setActiveTargetId('server-dev')
+    mockGetActiveProfileName.mockReturnValue('broken')
+    mockReadProfile.mockImplementation(() => {
+      throw new Error('profile not found')
+    })
+    const resolved = await getActiveTargetIdResolved()
+    expect(resolved).toBe('server-dev')
+  })
+
+  it('returns undefined when no profile target and no global target', async () => {
+    const { getActiveTargetIdResolved } = await storeModule()
+    mockGetActiveProfileName.mockReturnValue('default')
+    const resolved = await getActiveTargetIdResolved()
+    expect(resolved).toBeUndefined()
   })
 })

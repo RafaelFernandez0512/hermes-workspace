@@ -16,6 +16,7 @@ export type ProfileSummary = {
   sessionCount: number
   hasEnv: boolean
   updatedAt?: string
+  workspaceTargetId?: string
 }
 
 export type ProfileDetail = {
@@ -29,6 +30,7 @@ export type ProfileDetail = {
   hasEnv: boolean
   sessionsDir?: string
   skillsDir?: string
+  workspaceTargetId?: string
 }
 
 const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
@@ -333,7 +335,8 @@ export async function readProfileWithFallback(
           }>
         }
         const match = data.profiles?.find(
-          (p) => p.name === normalized || (normalized === 'default' && p.is_default),
+          (p) =>
+            p.name === normalized || (normalized === 'default' && p.is_default),
         )
         if (match) {
           const active = getActiveProfileName()
@@ -445,6 +448,10 @@ export function listProfiles(): Array<ProfileSummary> {
           skillsDir,
           sessionsDir,
         ]),
+        workspaceTargetId:
+          typeof config.workspaceTargetId === 'string'
+            ? config.workspaceTargetId
+            : undefined,
       })
     }
   }
@@ -486,6 +493,10 @@ export function listProfiles(): Array<ProfileSummary> {
     ),
     hasEnv: fs.existsSync(path.join(root, '.env')),
     updatedAt: latestMtime([root, path.join(root, 'config.yaml')]),
+    workspaceTargetId:
+      typeof config.workspaceTargetId === 'string'
+        ? config.workspaceTargetId
+        : undefined,
   })
 
   results.sort((a, b) => {
@@ -520,6 +531,10 @@ export function readProfile(name: string): ProfileDetail {
     hasEnv: fs.existsSync(envPath),
     sessionsDir: fs.existsSync(sessionsDir) ? sessionsDir : undefined,
     skillsDir: fs.existsSync(skillsDir) ? skillsDir : undefined,
+    workspaceTargetId:
+      typeof config.workspaceTargetId === 'string'
+        ? config.workspaceTargetId
+        : undefined,
   }
 }
 
@@ -659,6 +674,13 @@ export function updateProfileConfig(
   fs.mkdirSync(path.dirname(configPath), { recursive: true })
   fs.writeFileSync(configPath, YAML.stringify(current), 'utf-8')
   return readProfile(normalized)
+}
+
+export function setProfileTargetId(
+  profileName: string,
+  targetId: string | undefined,
+): void {
+  updateProfileConfig(profileName, { workspaceTargetId: targetId ?? null })
 }
 
 export function renameProfile(oldName: string, newName: string): ProfileDetail {

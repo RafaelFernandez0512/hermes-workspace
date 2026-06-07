@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { getStateDir } from '../workspace-state-dir'
+import { getActiveProfileName, readProfile } from '../profiles-browser'
 import { WorkspaceTargetsFileSchema } from './schema'
 import type { WorkspaceTarget, WorkspaceTargetsFile } from './types'
 
@@ -18,7 +19,9 @@ export async function loadTargetsFile(): Promise<WorkspaceTargetsFile> {
   }
 }
 
-export async function saveTargetsFile(file: WorkspaceTargetsFile): Promise<void> {
+export async function saveTargetsFile(
+  file: WorkspaceTargetsFile,
+): Promise<void> {
   const tmp = `${FILE}.tmp-${process.pid}`
   await fs.mkdir(path.dirname(FILE), { recursive: true, mode: 0o700 })
   await fs.writeFile(tmp, JSON.stringify(file, null, 2), { mode: 0o600 })
@@ -26,7 +29,9 @@ export async function saveTargetsFile(file: WorkspaceTargetsFile): Promise<void>
   invalidateTargetsCache()
 }
 
-export async function getTarget(id: string): Promise<WorkspaceTarget | undefined> {
+export async function getTarget(
+  id: string,
+): Promise<WorkspaceTarget | undefined> {
   const file = await loadTargetsFile()
   return file.targets.find((t) => t.id === id)
 }
@@ -85,4 +90,25 @@ export async function warmTargetsCache(): Promise<WorkspaceTargetsFile> {
   const file = await loadTargetsFile()
   _cache = file
   return file
+}
+
+/**
+ * Resolve the active target ID with profile-level override.
+ * Resolution order:
+ *   1. active profile's config.yaml → workspaceTargetId
+ *   2. workspace-targets.json → activeTargetId (global fallback)
+ *   3. undefined
+ */
+export async function getActiveTargetIdResolved(): Promise<string | undefined> {
+  const profileName = getActiveProfileName()
+  if (profileName) {
+    try {
+      const profile = readProfile(profileName)
+      if (profile.workspaceTargetId) return profile.workspaceTargetId
+    } catch {
+      // profile unreadable — fall through to global
+    }
+  }
+  const file = await loadTargetsFile()
+  return file.activeTargetId
 }
