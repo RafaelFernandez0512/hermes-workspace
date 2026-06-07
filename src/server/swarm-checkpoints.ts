@@ -31,8 +31,8 @@ function normalizeLabel(value: string): Label | null {
 
 function clean(value: string | undefined): string | null {
   const trimmed = (value ?? '').trim()
-  if (!trimmed) return null
-  return trimmed.replace(/^none$/i, 'none')
+  if (!trimmed || /^none$/i.test(trimmed)) return null
+  return trimmed
 }
 
 export function parseSwarmCheckpoint(text: string): ParsedSwarmCheckpoint | null {

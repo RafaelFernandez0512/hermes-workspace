@@ -50,6 +50,23 @@ describe('workspace API catalog semantics', () => {
     expect(catalog.path).not.toBe(process.env.HERMES_HOME)
   })
 
+  it('prefers profile-configured workspace over Docker env overrides', async () => {
+    const profileWorkspace = await makeDir(tempRoot, 'profile-workspace')
+    const dockerWorkspace = await makeDir(tempRoot, 'docker-workspace')
+    process.env.HERMES_WORKSPACE_DIR = dockerWorkspace
+    await fs.writeFile(
+      path.join(process.env.HERMES_HOME!, 'config.yaml'),
+      `default_workspace: ${JSON.stringify(profileWorkspace)}\n`,
+      'utf-8',
+    )
+
+    const catalog = await loadWorkspaceCatalog()
+
+    expect(catalog.path).toBe(profileWorkspace)
+    expect(catalog.source).toBe('config.default_workspace')
+    expect(catalog.last).toBe(profileWorkspace)
+  })
+
   it('ignores legacy persisted Hermes state paths as workspaces', async () => {
     const project = await makeDir(tempRoot, 'workspace')
     await fs.writeFile(

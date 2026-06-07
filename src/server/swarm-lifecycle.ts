@@ -471,11 +471,10 @@ export async function completeSwarm(swarmId: string): Promise<void> {
   }
 }
 
-export async function recoverRuntime(swarmId: string): Promise<void> {
-  for (const wId of _listWorkerIds()) {
-    _patchRuntime(wId, { state: 'idle', checkpointStatus: 'none', needsHuman: false })
-  }
-  await startOrResumeSwarm(swarmId)
+export async function recoverRuntime(swarmId: string): Promise<Array<{ workerId: string; action: 'none' | 'request-handoff' | 'renew'; status: SwarmLifecycleStatus; result?: { ok: boolean; error?: string } }>> {
+  const workerIds = _listWorkerIds()
+  const targets = workerIds.includes(swarmId) ? [swarmId] : workerIds
+  return autoSweepLifecycle(targets)
 }
 
 function _patchRuntime(workerId: string, patch: Record<string, unknown>): void {

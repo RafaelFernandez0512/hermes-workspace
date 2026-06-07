@@ -93,7 +93,9 @@ function buildReference(pathValue: string) {
 }
 
 async function fetchFileTree(): Promise<Array<FileEntry>> {
-  const res = await fetch('/api/files?action=list')
+  // Request a deeper tree so the Files page reflects the full workspace cwd,
+  // not just the top few directory levels.
+  const res = await fetch('/api/files?action=list&maxDepth=20&maxEntries=20000')
   if (!res.ok) throw new Error('Failed to load files')
   const data = (await res.json()) as { entries?: Array<FileEntry> }
   return Array.isArray(data.entries) ? data.entries : []

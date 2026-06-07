@@ -81,11 +81,11 @@ Start here: [docs/swarm/](./docs/swarm/)
 
 ## 🚀 Quick Start
 
-Three paths — pick the one that matches you:
+Docker Compose is the recommended self-hosted path.
 
 | Path | Best for | Time |
 |---|---|---|
-| **🐳 [Docker Compose](#-docker-quickstart)** | Self-hosters, home labs, "give me a compose gig" | ~2 min |
+| **🐳 [Docker Compose](#-docker-quickstart)** | Recommended: reproducible self-hosting | ~2 min |
 | **🌐 One-line install** | Local dev on macOS/Linux | ~3 min |
 | **🔌 Attach to existing `hermes-agent`** | You already run Hermes Agent | ~1 min |
 
@@ -399,156 +399,33 @@ If you've already started the workspace, change either URL from **Settings → C
 
 ## 🐳 Docker Quickstart
 
-[![Open in GitHub Codespaces](https://img.shields.io/badge/GitHub%20Codespaces-Open-181717?logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=outsourc-e/hermes-workspace)
-
-The Docker setup runs both the **Hermes Agent gateway** and **Hermes Workspace** together.
-
-### Prerequisites
-
-- **Docker**
-- **Docker Compose**
-- **A configured Hermes Agent model provider** — run `hermes setup` / `hermes model`, or provide a key for whichever provider you use. This workspace does not require Anthropic.
-
-### Step 1: Configure Environment
+Docker Compose is the recommended deployment path.
+Full deployment notes live in [docs/docker.md](./docs/docker.md).
 
 ```bash
-git clone https://github.com/outsourc-e/hermes-workspace.git
-cd hermes-workspace
 cp .env.example .env
+# fill in provider key(s), API_SERVER_KEY, and HERMES_PASSWORD
+
+docker compose up -d --build
 ```
 
-Edit `.env` and add **at least one** LLM provider key — whichever provider you want hermes-agent to use:
+Open `http://<your-tailscale-ip>:3000` (set `TAILSCALE_IP=$(tailscale ip -4)` in `.env`).
 
-```env
-# Pick one (or more). You do NOT need all of these.
-# OPENAI_API_KEY=sk-...                # GPT / o-series / OpenAI-compatible
-# OPENROUTER_API_KEY=sk-or-v1-...      # OpenRouter (free models available)
-# GOOGLE_API_KEY=AIza...               # Gemini
-```
+- `hermes-agent` runs the gateway + dashboard and publishes on the Tailscale IP
+- `hermes-workspace` runs the UI and publishes on the Tailscale IP
+- `proxy` is optional for HTTPS / single-domain setups
 
-Using **Ollama, LM Studio, or another local server**? No key needed — just point hermes-agent at your local endpoint via the onboarding flow.
-
-> **Heads up:** `hermes-agent` needs to be able to reach _some_ model. If you don't configure any provider (API key or local server), chat will fail on first message.
-
-### Step 2: Start the Services
+For local rebuilds after code changes:
 
 ```bash
-docker compose up
+./scripts/docker-update.sh
 ```
 
-This pulls two pre-built images and starts them:
-
-- **hermes-agent** → `nousresearch/hermes-agent:latest` on port **8642**
-- **hermes-workspace** → `ghcr.io/outsourc-e/hermes-workspace:latest` on port **3000**
-
-No local build. First run takes a minute to pull; subsequent starts are instant.
-Agent state (config, sessions, skills, memory, credentials) persists in the
-legacy-named `claude-data` Docker volume, so containers can be recreated without data loss.
-
-### Step 3: Access the Workspace
-
-Open `http://localhost:3000` and complete the onboarding.
-
-> **Verify:** Check the Docker logs for `[gateway] Connected to Hermes Agent` — this confirms the workspace successfully connected to the agent.
-
-### Remote Access (LAN / Tailscale / VPN)
-
-The default compose file binds ports to `127.0.0.1` (localhost only). To access the workspace from other devices on your network, you need to:
-
-**1. Publish ports without the loopback restriction.** Create a `docker-compose.override.yml`:
-
-```yaml
-services:
-  hermes-agent:
-    ports:
-      - '8642:8642'
-  hermes-workspace:
-    ports:
-      - '3000:3000'
-```
-
-**2. Add these env vars to `.env`:**
-
-```env
-# Required: workspace session password (the workspace refuses to start on 0.0.0.0 without it)
-HERMES_PASSWORD=your-strong-secret-here
-
-# Required for plain-HTTP LAN access (browsers drop Secure cookies over http://)
-COOKIE_SECURE=0
-
-# Recommended: gateway auth token (prevents unauthenticated API access on your LAN)
-API_SERVER_KEY=***
-
-# If the gateway refuses to start with "No user allowlists configured":
-GATEWAY_ALLOW_ALL_USERS=true
-```
-
-**3. Restart the stack:**
+For the development overlay:
 
 ```bash
-docker compose down && docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
-
-> **HTTPS behind a reverse proxy?** If you terminate TLS at a reverse proxy (Traefik, Nginx, Caddy, Tailscale Funnel), set `COOKIE_SECURE=1` instead and add `TRUST_PROXY=1` so IP classification works correctly.
-
-### Troubleshooting Docker
-
-| Symptom | Fix |
-|---|---|
-| `[workspace] refusing to start — HERMES_PASSWORD is unset` | Add `HERMES_PASSWORD=<secret>` to `.env` |
-| Login silently fails (no error, page reloads) | Add `COOKIE_SECURE=0` for HTTP, or `COOKIE_SECURE=1` + HTTPS |
-| `[Api_Server] Refusing to start: binding to 0.0.0.0 requires API_SERVER_KEY` | Add `API_SERVER_KEY=*** to `.env` |
-| `No user allowlists configured. All unauthorized users will be denied.` | Add `GATEWAY_ALLOW_ALL_USERS=true` to `.env` |
-| `CLAUDE_DASHBOARD_TOKEN is not set` warning | Set `CLAUDE_DASHBOARD_TOKEN` to the same value as `API_SERVER_KEY` |
-| 500 Internal Server Error on login after setting all the above | Clear browser cookies for the workspace domain, then retry |
-
-### Building from source
-
-Want to hack on the workspace and have local changes hot-built into the
-container? Use the dev overlay:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-```
-
-The base `docker-compose.yml` stays untouched — the overlay adds a `build:`
-block for the `hermes-workspace` service so the local repo is compiled
-instead of pulled. The Hermes Agent service still uses the canonical
-`nousresearch/hermes-agent:latest` image; if you need a custom agent
-build, tag it locally and override `image:` in your own
-`compose.override.yml`.
-
-### Using a Pre-Built Image (Coolify / Easypanel / Dokploy / Unraid)
-
-Deploying Hermes Workspace to a PaaS or home-lab stack? Pull the image
-directly from GitHub Container Registry:
-
-```
-ghcr.io/outsourc-e/hermes-workspace:latest
-```
-
-Available tags:
-
-| Tag | What it is |
-|---|---|
-| `latest` | Latest `main` commit (stable; recommended) |
-| `v2.0.0` | Pinned semver tag |
-| `main-<sha>` | Specific commit |
-
-Minimal Coolify / Easypanel config:
-
-```yaml
-service: hermes-workspace
-image: ghcr.io/outsourc-e/hermes-workspace:latest
-port: 3000
-env:
-  HERMES_API_URL: http://hermes-agent:8642   # point at your gateway
-  HERMES_API_TOKEN: ${API_SERVER_KEY}        # if gateway auth is enabled
-```
-
-The image is built for `linux/amd64` and `linux/arm64`. Pair it with either
-a `nousresearch/hermes-agent:latest` container (what our `docker-compose.yml`
-does by default) or an existing gateway on another host.
 
 ---
 

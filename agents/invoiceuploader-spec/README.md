@@ -3,7 +3,7 @@
 - Profile: `invoiceuploader-spec`
 - Wrapper: `invoiceuploader-spec:task`
 - Role: definición de requerimientos y bugs
-- CWD: `/home/winterfell/src/InvoiceUploader`
+- CWD: `/home/winterfell/src/InvoiceUploader/InvoiceUploader-app`
 - Tools: `file`, `terminal`, `session_search`, `skills`, `todo`, `clarify`
 - Skills autorizadas: `plan`
 

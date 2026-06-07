@@ -258,15 +258,15 @@ async function configuredDefaultWorkspace(): Promise<{
       : ''
 
   return firstValidDirectory([
-    { path: process.env.HERMES_WORKSPACE_DIR ?? '', source: 'env' },
-    { path: process.env.CLAUDE_WORKSPACE_DIR ?? '', source: 'env' },
-    { path: process.env.HERMES_WEBUI_DEFAULT_WORKSPACE ?? '', source: 'env' },
     { path: readString(cfg.workspace), source: 'config.workspace' },
     {
       path: readString(cfg.default_workspace),
       source: 'config.default_workspace',
     },
     { path: terminalCwd, source: 'config.terminal.cwd' },
+    { path: process.env.HERMES_WORKSPACE_DIR ?? '', source: 'env' },
+    { path: process.env.CLAUDE_WORKSPACE_DIR ?? '', source: 'env' },
+    { path: process.env.HERMES_WEBUI_DEFAULT_WORKSPACE ?? '', source: 'env' },
     { path: path.join(os.homedir(), 'workspace'), source: 'home.workspace' },
     { path: path.join(os.homedir(), 'work'), source: 'home.work' },
     {
@@ -315,24 +315,6 @@ export async function loadWorkspaceCatalog(): Promise<WorkspaceDetectionResponse
 
   if (workspaces.length === 0 && fallback.path) {
     workspaces = [{ name: 'Home', path: fallback.path }]
-  }
-
-  // Priority 2: Environment variable
-  const envWorkspace =
-    process.env.HERMES_WORKSPACE_DIR?.trim() ||
-    process.env.CLAUDE_WORKSPACE_DIR?.trim()
-  if (envWorkspace) {
-    const isValid = await isValidDirectory(envWorkspace)
-    if (isValid) {
-      return {
-        path: envWorkspace,
-        folderName: extractFolderName(envWorkspace),
-        source: 'env',
-        isValid: true,
-        workspaces,
-        last: envWorkspace,
-      }
-    }
   }
 
   const savedLast = readString(state.last)

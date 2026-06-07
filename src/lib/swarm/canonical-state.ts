@@ -27,6 +27,12 @@ export interface SwarmStatusPayload {
 
 export const STALE_MS = 45_000
 
+export const REAL_INCIDENT_STATUSES: Array<CanonicalSwarmStatus> = ['blocked', 'failed', 'needs_review', 'recovering', 'stale']
+
+export function isRealIncidentStatus(status: CanonicalSwarmStatus): boolean {
+  return REAL_INCIDENT_STATUSES.includes(status)
+}
+
 export function projectCanonicalStatus(params: {
   lifecycle: { status: string; pausedAt?: number | null } | null
   workers: Array<{ id: string; status: string; failedAt?: number | null }>
@@ -56,7 +62,8 @@ export function projectCanonicalStatus(params: {
   const allCompleted = checkpoints.length > 0 && checkpoints.every(c => c.status === 'completed') && lifecycle.status === 'healthy'
 
   if (lifecycle.status === 'renew_required') {
-    return { status: 'recovering', isStale, recommendedAction: { kind: 'recover_runtime' }, currentWorkerId: activeWorker?.id ?? null, blockedReason: 'Runtime renewal required' }
+    const workerId = activeWorker ? activeWorker.id : null
+    return { status: 'recovering', isStale, recommendedAction: { kind: 'recover_runtime' }, currentWorkerId: workerId, blockedReason: 'Runtime renewal required' }
   }
 
   if (allCompleted) {
@@ -68,8 +75,9 @@ export function projectCanonicalStatus(params: {
   }
 
   if (lifecycle.status === 'handoff_required' || blockedWorker) {
-    const w = blockedWorker ?? activeWorker ?? workers[0]
-    return { status: 'blocked', isStale, recommendedAction: { kind: 'send_guidance', workerId: w?.id ?? '' }, currentWorkerId: w?.id ?? null, blockedReason: 'Worker blocked and waiting for guidance' }
+    const w = blockedWorker ?? activeWorker ?? workers[0] ?? null
+    const workerId = w ? w.id : ''
+    return { status: 'blocked', isStale, recommendedAction: { kind: 'send_guidance', workerId }, currentWorkerId: w ? w.id : null, blockedReason: 'Worker blocked and waiting for guidance' }
   }
 
   if (awaitingReviewCheckpoint) {

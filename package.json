@@ -11,6 +11,8 @@
     "dev": "vite dev",
     "build": "vite build",
     "start:all": "concurrently \"hermes gateway run\" \"pnpm dev\"",
+    "docker:update": "bash scripts/docker-update.sh",
+    "docker:update:dev": "bash scripts/docker-update.sh --dev",
     "start": "node server-entry.js",
     "start:dev": "vite dev",
     "preview": "vite preview",

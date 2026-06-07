@@ -9,6 +9,7 @@ import { readWorkerMessages } from '../../server/swarm-chat-reader'
 import { getSwarmProfilePath, listSwarmWorkerIds, bumpHeartbeat } from '../../server/swarm-foundation'
 import { appendMissionContinuation, markMissionAssignmentsReviewedByWorker, recordMissionCheckpoint } from '../../server/swarm-missions'
 import { appendSwarmMemoryEvent } from '../../server/swarm-memory'
+import { reconcileExitedOneShotRuntime } from '../../server/swarm-oneshot-watchdog'
 import { publishSwarmActionPrompt, publishSwarmCheckpointNotification } from '../../server/swarm-notifications'
 import { applySwarmModeToLoopFlags, readSwarmMode } from '../../server/swarm-mode'
 import { isSwarmWorkerId, readSwarmRoster } from '../../server/swarm-roster'
@@ -157,6 +158,19 @@ function recordCheckpoint(input: {
 function runWorkerLoop(workerId: string, staleMs: number, dryRun: boolean): WorkerLoopResult {
   const profilePath = join(getProfilesDir(), workerId)
   const runtimePath = join(profilePath, 'runtime.json')
+  const orphanedOneShot = dryRun
+    ? { status: 'not_applicable', runtimePath, checkpoint: null }
+    : reconcileExitedOneShotRuntime({ workerId, profilePath })
+  if (orphanedOneShot.status === 'stale_reconciled') {
+    return {
+      workerId,
+      status: 'stale',
+      checkpoint: orphanedOneShot.checkpoint,
+      action: orphanedOneShot.reason ?? 'One-shot worker exited without a terminal checkpoint.',
+      runtimePath: orphanedOneShot.runtimePath,
+    }
+  }
+
   const current = readRuntimeJson(runtimePath)
   const chat = readWorkerMessages(profilePath, 40)
   if (!chat.ok) {

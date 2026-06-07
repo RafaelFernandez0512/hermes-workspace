@@ -475,6 +475,7 @@ function markDispatchStarted(workerId: string, task: string, missionId?: string 
     blockedReason: null,
     lastDispatchAt: Date.now(),
     lastDispatchMode: 'tmux',
+    lastDispatchPid: null,
     lastDispatchResult: 'Dispatch queued',
     lastCheckIn: new Date().toISOString(),
     lastSummary: controlMessage,
@@ -488,6 +489,7 @@ function markDispatchResult(workerId: string, result: WorkerResult): void {
   writeRuntimePatch(workerId, {
     lastDispatchAt: Date.now(),
     lastDispatchMode: result.delivery ?? 'none',
+    ...(result.ok && result.delivery === 'oneshot' ? {} : { lastDispatchPid: null }),
     lastDispatchResult: result.ok ? result.output.slice(0, 500) : (result.error ?? 'dispatch failed').slice(0, 500),
     state: result.ok ? 'executing' : 'blocked',
     checkpointStatus: result.ok ? 'in_progress' : 'blocked',
@@ -600,7 +602,7 @@ function markCheckpointResult(workerId: string, checkpoint: ParsedSwarmCheckpoin
     state: checkpoint.runtimeState,
     phase: checkpoint.stateLabel.toLowerCase(),
     checkpointStatus: checkpoint.checkpointStatus,
-    ...(clearCurrentTask ? { currentTask: null } : {}),
+    ...(clearCurrentTask ? { currentTask: null, lastDispatchPid: null } : {}),
     lastCheckIn: new Date().toISOString(),
     lastOutputAt: Date.now(),
     lastSummary: checkpoint.result,
@@ -885,6 +887,10 @@ function launchDetachedOneShot(workerId: string, prompt: string, timeoutMs: numb
     stdio: 'ignore',
   })
   child.unref()
+  writeRuntimePatch(workerId, {
+    lastDispatchMode: 'oneshot',
+    lastDispatchPid: child.pid ?? null,
+  })
 
   return {
     workerId,
@@ -1193,6 +1199,11 @@ function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: Swa
         resolve(result)
       },
     )
+
+    writeRuntimePatch(workerId, {
+      lastDispatchMode: 'oneshot',
+      lastDispatchPid: proc.pid ?? null,
+    })
 
     proc.on('error', (error) => {
       const result: WorkerResult = {

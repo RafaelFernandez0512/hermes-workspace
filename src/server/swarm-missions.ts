@@ -121,6 +121,40 @@ function event(type: SwarmMissionEvent['type'], message: string, extra?: Partial
   return { id: shortId('evt'), type, at: now(), message, ...extra }
 }
 
+function normalizeOptionalText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed || /^none$/i.test(trimmed)) return null
+  return trimmed
+}
+
+function normalizeCheckpointRecord(
+  checkpoint: ParsedSwarmCheckpoint | null | undefined,
+): ParsedSwarmCheckpoint | null {
+  if (!checkpoint) return null
+  return {
+    ...checkpoint,
+    filesChanged: normalizeOptionalText(checkpoint.filesChanged),
+    commandsRun: normalizeOptionalText(checkpoint.commandsRun),
+    result: normalizeOptionalText(checkpoint.result),
+    blocker: normalizeOptionalText(checkpoint.blocker),
+    nextAction: normalizeOptionalText(checkpoint.nextAction),
+  }
+}
+
+function normalizeReportRecord(
+  report: SwarmCheckpointReport,
+): SwarmCheckpointReport {
+  return {
+    ...report,
+    filesChanged: normalizeOptionalText(report.filesChanged),
+    commandsRun: normalizeOptionalText(report.commandsRun),
+    result: normalizeOptionalText(report.result),
+    blocker: normalizeOptionalText(report.blocker),
+    nextAction: normalizeOptionalText(report.nextAction),
+    source: report.source?.trim() || 'unknown',
+  }
+}
+
 function publishMissionEvent(mission: SwarmMission, evt: SwarmMissionEvent): void {
   const kind = evt.type === 'checkpoint'
     ? 'checkpoint' as const
@@ -152,7 +186,7 @@ function reportFromCheckpoint(input: {
   checkpoint: ParsedSwarmCheckpoint
   source?: string | null
 }): SwarmCheckpointReport {
-  return {
+  return normalizeReportRecord({
     missionId: input.missionId,
     assignmentId: input.assignmentId,
     workerId: input.workerId,
@@ -166,7 +200,7 @@ function reportFromCheckpoint(input: {
     blocker: input.checkpoint.blocker,
     nextAction: input.checkpoint.nextAction,
     source: input.source?.trim() || 'unknown',
-  }
+  })
 }
 
 function isDependencySatisfied(assignment: SwarmMissionAssignment): boolean {
@@ -278,17 +312,25 @@ function hydrateMissionRecord(mission: SwarmMission): SwarmMission {
   return {
     ...mission,
     ...dispatch,
+    dispatchReason: normalizeOptionalText(dispatch.dispatchReason),
     assignments: Array.isArray(mission.assignments)
       ? mission.assignments.map((assignment) => ({
         ...assignment,
         dependsOn: Array.isArray(assignment.dependsOn) ? assignment.dependsOn : [],
+        checkpoint: normalizeCheckpointRecord(assignment.checkpoint),
         lastHeartbeatAt: assignment.lastHeartbeatAt ?? null,
         lastOutputAt: assignment.lastOutputAt ?? null,
-        blockerReason: assignment.blockerReason ?? null,
-        staleReason: assignment.staleReason ?? null,
+        blockerReason: normalizeOptionalText(assignment.blockerReason),
+        staleReason: normalizeOptionalText(assignment.staleReason),
       }))
       : [],
-    events: Array.isArray(mission.events) ? mission.events : [],
+    events: Array.isArray(mission.events)
+      ? mission.events.map((evt) => (
+        evt.type === 'checkpoint' && evt.data
+          ? { ...evt, data: normalizeReportRecord(evt.data as SwarmCheckpointReport) }
+          : evt
+      ))
+      : [],
   }
 }
 
@@ -460,28 +502,29 @@ export function recordMissionCheckpoint(input: {
   if (assignment.checkpoint?.raw === input.checkpoint.raw) {
     return Object.assign(mission, { _completed: mission.state === 'complete' })
   }
+  const checkpoint = normalizeCheckpointRecord(input.checkpoint) ?? input.checkpoint
   const checkpointedAt = now()
-  assignment.checkpoint = input.checkpoint
+  assignment.checkpoint = checkpoint
   assignment.completedAt = checkpointedAt
   assignment.lastHeartbeatAt = checkpointedAt
   assignment.lastOutputAt = checkpointedAt
-  assignment.state = input.checkpoint.stateLabel === 'BLOCKED'
+  assignment.state = checkpoint.stateLabel === 'BLOCKED'
     ? 'blocked'
-    : input.checkpoint.stateLabel === 'NEEDS_INPUT'
+    : checkpoint.stateLabel === 'NEEDS_INPUT'
       ? 'needs_input'
-      : input.checkpoint.stateLabel === 'IN_PROGRESS'
+      : checkpoint.stateLabel === 'IN_PROGRESS'
         ? 'executing'
         : 'checkpointed'
-  assignment.blockerReason = input.checkpoint.blocker
+  assignment.blockerReason = normalizeOptionalText(checkpoint.blocker)
   assignment.staleReason = null
   const report = reportFromCheckpoint({
     missionId: mission.id,
     assignmentId: assignment.id,
     workerId: input.workerId,
-    checkpoint: input.checkpoint,
+    checkpoint,
     source: input.source,
   })
-  const checkpointEvt = event('checkpoint', `${input.workerId} checkpointed: ${input.checkpoint.stateLabel}`, {
+  const checkpointEvt = event('checkpoint', `${input.workerId} checkpointed: ${checkpoint.stateLabel}`, {
     workerId: input.workerId,
     assignmentId: assignment.id,
     data: report,
@@ -491,13 +534,13 @@ export function recordMissionCheckpoint(input: {
   const previousState = mission.state
   mission.dispatchLastOutputAt = checkpointedAt
   mission.dispatchLastHeartbeatAt = checkpointedAt
-  mission.dispatchReason = input.checkpoint.blocker ?? mission.dispatchReason
+  mission.dispatchReason = normalizeOptionalText(checkpoint.blocker) ?? mission.dispatchReason
   mission.state = deriveMissionState(mission)
   const completed = mission.state === 'complete' && previousState !== 'complete'
   writeStore(store)
   publishMissionEvent(mission, checkpointEvt)
-  if (input.checkpoint.filesChanged && input.checkpoint.filesChanged !== 'none') {
-    for (const filePath of input.checkpoint.filesChanged.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean)) {
+  if (checkpoint.filesChanged) {
+    for (const filePath of checkpoint.filesChanged.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean)) {
       publishSwarmEvent({
         kind: 'file_edit',
         missionId: mission.id,
@@ -508,8 +551,8 @@ export function recordMissionCheckpoint(input: {
       })
     }
   }
-  if (input.checkpoint.commandsRun && input.checkpoint.commandsRun !== 'none') {
-    for (const cmd of input.checkpoint.commandsRun.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean)) {
+  if (checkpoint.commandsRun) {
+    for (const cmd of checkpoint.commandsRun.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean)) {
       publishSwarmEvent({
         kind: 'tool_use',
         missionId: mission.id,
@@ -1072,7 +1115,7 @@ export function listSwarmReports(input?: {
   return missions
     .flatMap((entry) => entry.events)
     .filter((event) => event.type === 'checkpoint' && event.data)
-    .map((event) => event.data as SwarmCheckpointReport)
+    .map((event) => normalizeReportRecord(event.data as SwarmCheckpointReport))
     .filter((report) => !input?.workerId || report.workerId === input.workerId)
     .sort((a, b) => b.recordedAt - a.recordedAt)
     .slice(0, limit)

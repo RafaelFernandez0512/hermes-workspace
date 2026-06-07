@@ -3,7 +3,7 @@
 - Profile: `invoiceuploader-coder`
 - Wrapper: `invoiceuploader-coder:task`
 - Role: implementación acotada
-- CWD: `/home/winterfell/src/InvoiceUploader`
+- CWD: `/home/winterfell/src/InvoiceUploader/InvoiceUploader-app`
 - Tools: `terminal`, `file`, `session_search`, `skills`, `todo`
 - Skills autorizadas: `codebase-inspection`, `systematic-debugging`, `test-driven-development`
 

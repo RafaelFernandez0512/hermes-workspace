@@ -12,33 +12,66 @@ interface ActionBarProps {
 interface ActionButton {
   label: string
   primary?: boolean
-  onClick: () => Promise<void> | void
+  onClick: () => Promise<unknown> | unknown
 }
 
-async function postLifecycleAction(action: string, workerId?: string): Promise<void> {
-  await fetch('/api/swarm-lifecycle', {
+type LifecycleActionResponse = {
+  ok?: boolean
+  error?: string
+  sweep?: Array<{ workerId: string; action: string; result?: { ok: boolean; error?: string } }>
+  [key: string]: unknown
+}
+
+async function postLifecycleAction(action: string, workerId?: string): Promise<LifecycleActionResponse> {
+  const response = await fetch('/api/swarm-lifecycle', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, workerId }),
   })
+
+  const data = (await response.json().catch(() => ({}))) as LifecycleActionResponse
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.error ?? `Request failed (${response.status})`)
+  }
+  return data
+}
+
+function summarizeSweep(sweep: LifecycleActionResponse['sweep']): string | null {
+  if (!Array.isArray(sweep) || sweep.length === 0) return null
+  const acted = sweep.filter((item) => item.action !== 'none')
+  if (acted.length === 0) return 'No runtime action was needed.'
+  return acted.map((item) => `${item.workerId} → ${item.action}`).join(' · ')
 }
 
 export function ActionBar({ status, swarmId }: ActionBarProps) {
   const [loading, setLoading] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const workerId = status.currentWorkerId ?? swarmId
 
-  const handleAction = async (label: string, fn: () => Promise<void>) => {
-    setLoading(label)
+  const handleAction = async (button: ActionButton) => {
+    setLoading(button.label)
+    setError(null)
+    setNotice(null)
     try {
-      await fn()
+      const result = await button.onClick()
+      if (button.label === CTA.RECOVER_RUNTIME) {
+        const recovery = summarizeSweep((result as LifecycleActionResponse | undefined)?.sweep)
+        setNotice(recovery ?? 'Recovery request sent.')
+      } else {
+        setNotice(`${button.label} sent.`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Action failed')
     } finally {
       setLoading(null)
     }
   }
 
   let primary: ActionButton | null = null
-  let secondaries: ActionButton[] = []
+  let secondaries: Array<ActionButton> = []
+  let helper: string | null = null
 
   switch (status.status) {
     case 'not_started':
@@ -48,6 +81,7 @@ export function ActionBar({ status, swarmId }: ActionBarProps) {
         primary: true,
         onClick: () => postLifecycleAction('start-or-resume', workerId),
       }
+      helper = 'Start the swarm or resume the current worker.'
       break
 
     case 'running':
@@ -59,8 +93,8 @@ export function ActionBar({ status, swarmId }: ActionBarProps) {
       }
       secondaries = [
         { label: CTA.PAUSE, onClick: () => postLifecycleAction('pause', workerId) },
-        { label: CTA.VIEW_WORKERS, onClick: () => {} },
       ]
+      helper = 'Resume the worker or pause the swarm.'
       break
 
     case 'blocked':
@@ -72,8 +106,8 @@ export function ActionBar({ status, swarmId }: ActionBarProps) {
       secondaries = [
         { label: CTA.REROUTE, onClick: () => postLifecycleAction('mark-blocked', workerId) },
         { label: CTA.ESCALATE_REVIEW, onClick: () => postLifecycleAction('mark-needs-review', workerId) },
-        { label: CTA.OPEN_INCIDENT, onClick: () => {} },
       ]
+      helper = 'Route around the blocker or escalate it.'
       break
 
     case 'needs_review':
@@ -84,8 +118,8 @@ export function ActionBar({ status, swarmId }: ActionBarProps) {
       }
       secondaries = [
         { label: CTA.SEND_GUIDANCE, onClick: () => postLifecycleAction('start-or-resume', workerId) },
-        { label: CTA.OPEN_INCIDENT, onClick: () => {} },
       ]
+      helper = 'Approve the checkpoint or nudge the worker.'
       break
 
     case 'ready':
@@ -95,9 +129,9 @@ export function ActionBar({ status, swarmId }: ActionBarProps) {
         onClick: () => postLifecycleAction('complete', workerId),
       }
       secondaries = [
-        { label: CTA.OPEN_PR, onClick: () => {} },
         { label: CTA.SEND_GUIDANCE, onClick: () => postLifecycleAction('start-or-resume', workerId) },
       ]
+      helper = 'Mark the swarm complete or send a final prompt.'
       break
 
     case 'recovering':
@@ -108,8 +142,9 @@ export function ActionBar({ status, swarmId }: ActionBarProps) {
         onClick: () => postLifecycleAction('recover-runtime', workerId),
       }
       secondaries = [
-        { label: CTA.VIEW_DETAILS, onClick: () => {} },
+        { label: CTA.REQUEST_HANDOFF, onClick: () => postLifecycleAction('request-handoff', workerId) },
       ]
+      helper = 'Recover the worker or request a handoff first.'
       break
 
     case 'failed':
@@ -120,24 +155,16 @@ export function ActionBar({ status, swarmId }: ActionBarProps) {
       }
       secondaries = [
         { label: CTA.ESCALATE_REVIEW, onClick: () => postLifecycleAction('mark-needs-review', workerId) },
-        { label: CTA.VIEW_LOGS, onClick: () => {} },
       ]
+      helper = 'Retry the worker or send it to review.'
       break
 
     case 'completed':
-      primary = {
-        label: CTA.VIEW_DETAILS,
-        primary: false,
-        onClick: () => {},
-      }
+      helper = 'No further action required.'
       break
 
     default:
-      primary = {
-        label: CTA.VIEW_DETAILS,
-        primary: false,
-        onClick: () => {},
-      }
+      helper = 'No action available.'
   }
 
   const renderButton = (btn: ActionButton, key: string) => (
@@ -145,7 +172,7 @@ export function ActionBar({ status, swarmId }: ActionBarProps) {
       key={key}
       type="button"
       disabled={loading !== null}
-      onClick={() => handleAction(btn.label, async () => { await btn.onClick() })}
+      onClick={() => { void handleAction(btn) }}
       className={[
         'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50',
         btn.primary
@@ -158,9 +185,27 @@ export function ActionBar({ status, swarmId }: ActionBarProps) {
   )
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {primary && renderButton(primary, 'primary')}
-      {secondaries.map((btn, i) => renderButton(btn, `secondary-${i}`))}
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {primary && renderButton(primary, 'primary')}
+        {secondaries.map((btn, i) => renderButton(btn, `secondary-${i}`))}
+      </div>
+
+      {helper && (
+        <p className="text-xs text-[var(--theme-muted,var(--color-primary-600))]">
+          {helper}
+        </p>
+      )}
+      {notice && (
+        <p className="text-xs text-emerald-600">
+          {notice}
+        </p>
+      )}
+      {error && (
+        <p className="text-xs text-red-600">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

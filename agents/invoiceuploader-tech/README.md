@@ -3,7 +3,7 @@
 - Profile: `invoiceuploader-tech`
 - Wrapper: `invoiceuploader-tech:task`
 - Role: análisis técnico
-- CWD: `/home/winterfell/src/InvoiceUploader`
+- CWD: `/home/winterfell/src/InvoiceUploader/InvoiceUploader-app`
 - Tools: `terminal`, `file`, `web`, `session_search`, `skills`, `todo`
 - Skills autorizadas: `codebase-inspection`, `systematic-debugging`
 

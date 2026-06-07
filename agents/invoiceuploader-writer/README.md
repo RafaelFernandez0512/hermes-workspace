@@ -3,7 +3,7 @@
 - Profile: `invoiceuploader-writer`
 - Wrapper: `invoiceuploader-writer:note`
 - Role: documentación y memoria
-- CWD: `/home/winterfell/src/InvoiceUploader`
+- CWD: `/home/winterfell/src/InvoiceUploader/InvoiceUploader-app`
 - Tools: `gbrain`, `file`, `terminal`, `session_search`, `skills`, `todo`
 - Skills autorizadas: `gbrain`
 

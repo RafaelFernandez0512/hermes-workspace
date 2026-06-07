@@ -11,6 +11,7 @@ export const CTA = {
   MARK_COMPLETE: 'Mark complete',
   OPEN_PR: 'Open PR',
   RECOVER_RUNTIME: 'Recover runtime',
+  REQUEST_HANDOFF: 'Request handoff',
   RETRY_WORKER: 'Retry worker',
   VIEW_WORKER: 'View worker',
   PAUSE: 'Pause',
@@ -19,6 +20,6 @@ export const CTA = {
 } as const
 
 export function incidentCtaFor(status: CanonicalSwarmStatus): string {
-  const incidentStatuses: CanonicalSwarmStatus[] = ['blocked', 'failed', 'needs_review', 'stale']
+  const incidentStatuses: Array<CanonicalSwarmStatus> = ['blocked', 'failed', 'needs_review', 'stale']
   return incidentStatuses.includes(status) ? CTA.OPEN_INCIDENT : CTA.VIEW_DETAILS
 }

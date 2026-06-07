@@ -65,6 +65,7 @@ type TerminalSessionResponse = {
 // See terminal-panel.tsx — ~/.hermes is not guaranteed to exist in the workspace image.
 const DEFAULT_TERMINAL_CWD = '~'
 const TERMINAL_BG = '#0d0d0d'
+const WORKSPACE_CWD_ENDPOINT = '/api/workspace'
 
 function toDebugAnalysis(value: unknown): DebugAnalysis | null {
   if (!value || typeof value !== 'object') return null
@@ -136,6 +137,7 @@ export function TerminalWorkspace({
   const [debugAnalysis, setDebugAnalysis] = useState<DebugAnalysis | null>(null)
   const [debugLoading, setDebugLoading] = useState(false)
   const [showDebugPanel, setShowDebugPanel] = useState(false)
+  const [workspaceCwd, setWorkspaceCwd] = useState<string | null>(null)
 
   const containerMapRef = useRef(new Map<string, HTMLDivElement>())
   const terminalMapRef = useRef(new Map<string, Terminal>())
@@ -144,6 +146,7 @@ export function TerminalWorkspace({
     new Map<string, ReadableStreamDefaultReader<Uint8Array>>(),
   )
   const connectedRef = useRef(new Set<string>())
+  const workspaceCwdRequestRef = useRef<Promise<string> | null>(null)
 
   const activeTab = useMemo(
     function activeTabMemo() {
@@ -152,6 +155,45 @@ export function TerminalWorkspace({
     },
     [activeTabId, tabs],
   )
+
+  const resolveWorkspaceCwd = useCallback(async function resolveWorkspaceCwd() {
+    if (workspaceCwd?.trim()) return workspaceCwd.trim()
+    if (!workspaceCwdRequestRef.current) {
+      workspaceCwdRequestRef.current = fetch(WORKSPACE_CWD_ENDPOINT)
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Workspace lookup failed (${response.status})`)
+          }
+          return (await response.json()) as { path?: string }
+        })
+        .then((payload) => {
+          const nextCwd =
+            typeof payload.path === 'string' && payload.path.trim().length > 0
+              ? payload.path.trim()
+              : DEFAULT_TERMINAL_CWD
+          setWorkspaceCwd(nextCwd)
+          return nextCwd
+        })
+        .catch(() => {
+          setWorkspaceCwd(DEFAULT_TERMINAL_CWD)
+          return DEFAULT_TERMINAL_CWD
+        })
+        .finally(() => {
+          workspaceCwdRequestRef.current = null
+        })
+    }
+    return workspaceCwdRequestRef.current
+  }, [workspaceCwd])
+
+  const activeTabCwd = activeTab.cwd
+  const displayCwd = useMemo(() => {
+    if (activeTabCwd !== '~') return activeTabCwd
+    return workspaceCwd ?? DEFAULT_TERMINAL_CWD
+  }, [activeTabCwd, workspaceCwd])
+
+  useEffect(() => {
+    void resolveWorkspaceCwd()
+  }, [resolveWorkspaceCwd])
 
   const sendInput = useCallback(function sendInput(
     tabId: string,
@@ -336,11 +378,16 @@ export function TerminalWorkspace({
       connectedRef.current.add(tab.id)
       setTabStatus(tab.id, 'active')
 
+      const cwd =
+        tab.cwd && tab.cwd !== '~'
+          ? tab.cwd
+          : await resolveWorkspaceCwd()
+
       const response = await fetch('/api/terminal-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          cwd: DEFAULT_TERMINAL_CWD,
+          cwd,
           // Let the server pick the shell from $SHELL
           cols: terminal.cols,
           rows: terminal.rows,
@@ -521,7 +568,7 @@ export function TerminalWorkspace({
 
       setTabSessionId(tab.id, null)
     },
-    [renameTab, setTabSessionId, setTabStatus],
+    [renameTab, resolveWorkspaceCwd, setTabSessionId, setTabStatus],
   )
 
   const ensureTerminalForTab = useCallback(
@@ -869,6 +916,9 @@ export function TerminalWorkspace({
               </Button>
             </>
           ) : null}
+          <span className="hidden max-w-[40ch] truncate rounded-full border border-primary-200 px-2 py-1 text-[10px] text-primary-600 md:inline-flex">
+            cwd: {displayCwd}
+          </span>
         </div>
       </div>
 

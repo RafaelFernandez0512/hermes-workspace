@@ -633,7 +633,7 @@ workers:
   - impact-triage
   - proof-contracts
   - greenlight-gate
-  defaultCwd: /home/winterfell/src/InvoiceUploader
+  defaultCwd: /home/winterfell/src/InvoiceUploader/InvoiceUploader-app
   preferredTaskTypes:
   - orchestration
   - planning
@@ -677,7 +677,7 @@ workers:
   - bug-specification
   - acceptance-criteria
   - risk-framing
-  defaultCwd: /home/winterfell/src/InvoiceUploader
+  defaultCwd: /home/winterfell/src/InvoiceUploader/InvoiceUploader-app
   preferredTaskTypes:
   - requirements
   - bug-definition
@@ -715,7 +715,7 @@ workers:
   - root-cause-analysis
   - integration-impact
   - architecture-review
-  defaultCwd: /home/winterfell/src/InvoiceUploader
+  defaultCwd: /home/winterfell/src/InvoiceUploader/InvoiceUploader-app
   preferredTaskTypes:
   - analysis
   - diagnostics
@@ -756,7 +756,7 @@ workers:
   - frontend
   - backend
   - build-verification
-  defaultCwd: /home/winterfell/src/InvoiceUploader
+  defaultCwd: /home/winterfell/src/InvoiceUploader/InvoiceUploader-app
   preferredTaskTypes:
   - implementation
   - bugfix
@@ -802,7 +802,7 @@ workers:
   - build-verification
   - react-vite-validation
   - validation-gap-reporting
-  defaultCwd: /home/winterfell/src/InvoiceUploader
+  defaultCwd: /home/winterfell/src/InvoiceUploader/InvoiceUploader-app
   preferredTaskTypes:
   - qa
   - validation
@@ -840,7 +840,7 @@ workers:
   - decision-records
   - change-log
   - memory-capture
-  defaultCwd: /home/winterfell/src/InvoiceUploader
+  defaultCwd: /home/winterfell/src/InvoiceUploader/InvoiceUploader-app
   preferredTaskTypes:
   - documentation
   - decision

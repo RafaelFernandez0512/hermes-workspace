@@ -4,6 +4,7 @@ import type { ChildProcess } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import net from 'node:net'
 import { resolve, dirname } from 'node:path'
+import { buildSpawnPath } from './src/lib/path-env'
 import os from 'node:os'
 
 // devtools removed
@@ -177,15 +178,12 @@ const config = defineConfig(({ mode, command }) => {
       stdio: 'pipe',
       env: {
         ...process.env,
-        PATH: [
+        PATH: buildSpawnPath([
           resolve(os.homedir(), '.claude', 'bin'),
           resolve(os.homedir(), '.local', 'bin'),
           agentDir ? resolve(agentDir, '.venv', 'bin') : '',
           agentDir ? resolve(agentDir, 'venv', 'bin') : '',
-          process.env.PATH || '',
-        ]
-          .filter(Boolean)
-          .join(':'),
+        ]),
       },
     })
 

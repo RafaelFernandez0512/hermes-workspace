@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 
+import { buildSpawnPath } from '../lib/path-env'
+
 const CLAUDE_HEALTH_TIMEOUT_MS = 2_000
 const CLAUDE_START_PORT = 8642
 
@@ -172,13 +174,12 @@ export async function startClaudeAgent(): Promise<StartClaudeAgentResult> {
           env: {
             ...process.env,
             ...claudeEnv,
-            PATH: [
+            PATH: buildSpawnPath([
               resolve(homedir(), '.claude', 'bin'),
               resolve(homedir(), '.local', 'bin'),
               agentDir ? resolve(agentDir, '.venv', 'bin') : '',
               agentDir ? resolve(agentDir, 'venv', 'bin') : '',
-              process.env.PATH || '',
-            ].filter(Boolean).join(':'),
+            ]),
           },
         },
       )

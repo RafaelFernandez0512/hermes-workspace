@@ -1,166 +1,143 @@
 # Docker
 
-Hermes Workspace + Hermes Agent in containers.
+Hermes Workspace is meant to run as a Docker stack:
 
-## TL;DR (single-host, localhost-only)
+- **`hermes-agent`** — Hermes gateway + dashboard
+- **`hermes-workspace`** — the web UI (`server-entry.js`)
+- **`proxy`** — optional HTTPS/domain front door (Caddy)
+
+The workspace talks to the agent over the Docker network (`hermes-agent:8642` / `hermes-agent:9119`), so it never needs `localhost` for agent access.
+
+## Quickstart
 
 ```bash
-git clone https://github.com/outsourc-e/hermes-workspace
-cd hermes-workspace
 cp .env.example .env
-# add at least one provider key (e.g. OPENROUTER_API_KEY=...)
-docker compose up -d
-open http://localhost:3000
+# fill in provider key(s), API_SERVER_KEY, and HERMES_PASSWORD
+
+docker compose up -d --build
 ```
 
-That's it. The repo's `docker-compose.yml` runs:
-
-- `hermes-agent` (port `8642`, internal only)
-- `hermes-workspace` (port `3000`, bound to `127.0.0.1`)
-
-The workspace waits for the agent's `/health` to return `200` before starting (via `depends_on: condition: service_healthy`). On a fresh laptop this takes about 15 seconds.
-
-## Multi-host / NAS / VPS
-
-If the workspace and agent run on **different machines**, or you want LAN/Tailscale access to the workspace, three things change:
-
-### 1. Agent binds publicly
-
-In `.env`:
+Open:
 
 ```bash
-API_SERVER_HOST=0.0.0.0
-API_SERVER_KEY=<a long random string>
+http://localhost:3000
 ```
 
-This makes the agent listen on all interfaces, not just the Docker loopback. **`API_SERVER_KEY` is mandatory** when `API_SERVER_HOST` is non-loopback — the agent will refuse to start otherwise.
+## Required env
 
-### 2. Workspace knows where the agent is
+- Provider key(s) for whichever model provider you use
+- `API_SERVER_KEY` (the entrypoint exports it as `HERMES_API_TOKEN` inside the workspace)
+- `HERMES_PASSWORD`
+- `HERMES_DASHBOARD_INSECURE=1` when the agent dashboard auth gate refuses a Docker bridge bind
 
-In `.env`:
+Recommended defaults for plain HTTP:
+
+- `COOKIE_SECURE=0`
+- `TRUST_PROXY=0`
+
+## Localhost mode
+
+This is the default path:
+
+- agent is published on the machine's Tailscale IP
+- workspace is published on the machine's Tailscale IP
+- no proxy required
+
+Set `TAILSCALE_IP=$(tailscale ip -4)` in `.env`.
+
+Because the container binds `0.0.0.0` internally, **`HERMES_PASSWORD` is still required** even for localhost-only access.
+
+Useful commands:
 
 ```bash
-HERMES_API_URL=http://<agent-host-or-service>:8642
-HERMES_API_TOKEN=<the same value as API_SERVER_KEY>
-HERMES_DASHBOARD_URL=http://<agent-host-or-service>:9119
-HERMES_DASHBOARD_TOKEN=<same key, or set CLAUDE_DASHBOARD_TOKEN>
+docker compose logs -f hermes-agent
+docker compose logs -f hermes-workspace
 ```
 
-Inside docker compose on the same host, `<agent-host-or-service>` is the service name from your compose file (e.g. `hermes-agent`). On a Synology NAS with a separate workspace stack, it's the LAN IP (e.g. `192.168.1.78`).
+## LAN / Tailscale mode
 
-### 3. Workspace gets a password
+If you want direct access from another machine, just set `TAILSCALE_IP` to the machine's Tailscale IP and keep the compose stack as-is.
 
-The workspace bind is non-loopback in Docker (`0.0.0.0:3000`). It refuses to start in production mode without a password to prevent accidental open exposure:
+Then:
+
+- keep `HERMES_API_URL=http://hermes-agent:8642`
+- keep `HERMES_DASHBOARD_URL=http://hermes-agent:9119`
+- keep `API_SERVER_KEY` and `HERMES_PASSWORD`
+- keep `COOKIE_SECURE=0` for plain HTTP
+
+If you terminate TLS elsewhere, set:
+
+- `COOKIE_SECURE=1`
+- `TRUST_PROXY=1`
+
+## HTTPS / single-domain mode
+
+Enable the optional proxy profile and set a domain:
 
 ```bash
-HERMES_PASSWORD=<a long random string different from API_SERVER_KEY>
+HERMES_DOMAIN=workspace.example.com
+CADDY_EMAIL=you@example.com
+COOKIE_SECURE=1
+TRUST_PROXY=1
+
+docker compose --profile proxy up -d --build
 ```
 
-If you publish the workspace behind HTTPS (reverse proxy, Tailscale Funnel, Cloudflare Tunnel), also set `COOKIE_SECURE=1` so session cookies get the `Secure` flag.
+Caddy will reverse-proxy `hermes-workspace:3000` and handle TLS.
 
-## Connection failures — diagnostic playbook
+## Development overlay
 
-If the workspace shows "**Disconnected**" or "**Missing Hermes APIs detected**" but the agent appears to be running:
-
-### Step 1 — Verify the agent is reachable from inside the workspace container
+Build from local source instead of the production runtime image:
 
 ```bash
-docker compose exec hermes-workspace sh
-# inside the workspace container:
-curl -fsS http://hermes-agent:8642/health
-curl -fsS -H "Authorization: Bearer $HERMES_API_TOKEN" http://hermes-agent:8642/v1/models | head -c 200
-exit
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-If `/health` returns a JSON `{"status": "ok"}`, the agent is alive on the docker network.
+This keeps the same service topology, but mounts the repo into the workspace container and watches the UI build output in-container.
 
-### Step 2 — Confirm the workspace's environment
+## Update script
+
+For a quick rebuild after code or service changes:
 
 ```bash
-docker compose exec hermes-workspace env | grep -E "HERMES_API|API_SERVER"
+./scripts/docker-update.sh
+# or: pnpm docker:update
 ```
 
-You should see:
+Use `./scripts/docker-update.sh --dev` (or `pnpm docker:update:dev`) to start the development overlay.
 
-- `HERMES_API_URL=http://hermes-agent:8642` (or whichever service name)
-- `HERMES_API_TOKEN=<same value as agent's API_SERVER_KEY>`
+## Rollback
 
-### Step 3 — Force a reprobe
-
-The workspace caches the gateway capability map for 2 minutes (15 seconds when in disconnected state, since v2.2.1). If the agent came up after the workspace started probing, that cache is stale.
+### App rollback
 
 ```bash
-curl -X POST http://localhost:3000/api/gateway-reprobe
+docker compose down
+# restore the previous git commit/tag
+git checkout <commit>
+./scripts/docker-update.sh
 ```
 
-This re-runs the probe and returns the fresh capability map. If it now reads `mode=zero-fork` you're connected.
+### Data rollback
 
-### Step 4 — Read the workspace's capability log
+The named volumes survive `docker compose down`.
 
-The workspace logs the full capability summary on every probe. Look for the `[gateway]` line:
+- `docker compose down` → keeps data
+- `docker compose down -v` → deletes data volumes
 
-```bash
-docker compose logs hermes-workspace 2>&1 | grep '\[gateway\]' | tail -3
-```
+## Troubleshooting
 
-A healthy log looks like:
+| Symptom | Fix |
+|---|---|
+| Workspace login loops on HTTP | Set `COOKIE_SECURE=0` |
+| Workspace refuses to start | Set `HERMES_PASSWORD` |
+| Agent returns 401 | Make `API_SERVER_KEY` and `HERMES_API_TOKEN` match |
+| Agent healthcheck fails | Add a valid provider key to `.env` |
+| Proxy returns 502 | Check `hermes-agent` and `hermes-workspace` logs; wait for healthchecks |
+| `localhost` works but LAN does not | Publish the workspace port on the host or use the proxy profile |
 
-```
-[gateway] gateway=http://hermes-agent:8642 dashboard=http://hermes-agent:9119 mode=zero-fork core=[health,chatCompletions,models,streaming] enhanced=[sessions,skills,memory,config,jobs,enhancedChat,conductor,kanban] missing=[mcp]
-```
+## UI vs agent
 
-A failing log usually shows `core=[]` and `missing=[health,...]` — that means every probe got a non-2xx response. Check the agent's logs (`docker compose logs hermes-agent`) for matching 401/404/timeout entries.
+- **UI (`hermes-workspace`)**: browser app, auth, files, terminal, tasks, UI state
+- **Agent (`hermes-agent`)**: model gateway, dashboard, sessions, skills, jobs
 
-### Common causes
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| `core=[]` and `missing=[health,...]` | Workspace probed before agent was ready | Wait 30s and reload, or `POST /api/gateway-reprobe`. Cache TTL drops to 15s in disconnected state. |
-| `core=[health,chatCompletions]` but no `models` | Older agent image (pre-`/v1/models`) | Update: `docker compose pull && docker compose up -d` |
-| All probes 401 | `HERMES_API_TOKEN` doesn't match agent's `API_SERVER_KEY` | Check both `.env` values are the same. They must match exactly. |
-| Workspace UI shows "Connection refused" | Workspace using `127.0.0.1` instead of the service name | Set `HERMES_API_URL=http://hermes-agent:8642` (or whichever service name). |
-| Agent restart loops with `API_SERVER_KEY required` | Agent bound to 0.0.0.0 without a key | Set `API_SERVER_KEY` in `.env` (mandatory for non-loopback bind). |
-
-## Synology NAS / external host setups
-
-If your workspace and agent are on **different stacks** on the same NAS (or different hosts entirely), they don't share a docker network. You need:
-
-1. Both to publish their ports (the agent on `8642`, the workspace on `3000`).
-2. The workspace to point at the agent's **host IP**, not service name. Example for Synology with NAS at `192.168.1.78`:
-
-```bash
-HERMES_API_URL=http://192.168.1.78:8642
-HERMES_API_TOKEN=<API_SERVER_KEY>
-HERMES_DASHBOARD_URL=http://192.168.1.78:9119
-```
-
-3. The agent to bind on `0.0.0.0`:
-
-```bash
-API_SERVER_HOST=0.0.0.0
-API_SERVER_KEY=<long random>
-```
-
-4. The dashboard plugin (multi-board kanban, conductor missions) needs the dashboard service running on the agent host too — see the agent's docker-compose for that service.
-
-If you bind the agent to `0.0.0.0` on a NAS without `API_SERVER_KEY`, the agent will refuse to start. This is intentional — open-internet exposure of the agent's chat endpoint without auth would be a footgun.
-
-## Hermes Workspace + Hermes Agent: why two containers?
-
-The workspace is the **UI**. The agent is the **engine**. Splitting them lets you:
-
-- Update either independently (`docker compose pull hermes-workspace` etc.)
-- Run multiple workspaces against one agent (different ports)
-- Run the workspace on a tablet/phone while the agent stays on a beefy machine
-
-The default compose colocates them for simplicity. The split-host setup above is the explicit "you know what you're doing" path.
-
-## Filing bugs
-
-If your setup matches the playbook above and still breaks, file an issue at <https://github.com/outsourc-e/hermes-workspace/issues> with:
-
-1. Your `docker-compose.yml` (redact secrets)
-2. The output of `docker compose logs hermes-workspace 2>&1 | grep '\[gateway\]' | tail -5`
-3. The output of `curl -fsS http://<workspace-host>:3000/api/gateway-reprobe -X POST` (also redact)
-
-That gets us to the actual cause within a couple of comments instead of a long back-and-forth.
+If the UI is up but features are missing, check the agent logs first.

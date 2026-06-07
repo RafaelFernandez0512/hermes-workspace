@@ -39,13 +39,22 @@ type RuntimeReportEntry = {
   lastResult?: string | null
   lastRealResult?: string | null
   blockedReason?: string | null
+  missionId?: string | null
+  missionTitle?: string | null
+  assignmentId?: string | null
   assignmentState?: string | null
+  assignmentReviewRequired?: boolean | null
+  assignmentReviewedAt?: number | null
+  assignmentReviewedBy?: string | null
   assignmentBlocker?: string | null
   assignmentStaleReason?: string | null
   dispatchState?: string | null
   checkpointStatus?: string | null
+  state?: string | null
+  phase?: string | null
   needsHuman?: boolean | null
   recentLogTail?: string | null
+  nextAction?: string | null
   artifacts?: Array<RuntimeArtifact>
   previews?: Array<RuntimePreview>
 }
@@ -79,11 +88,14 @@ type MissionSummary = {
   title: string
   state: string
   updatedAt: number
+  archivedAt?: number | null
+  deletedAt?: number | null
   assignments?: Array<MissionAssignment>
 }
 
 export type Swarm2ReportRow = {
   id: string
+  scope: 'current' | 'history'
   kind: 'checkpoint' | 'runtime' | 'artifact'
   title: string
   missionId: string | null
@@ -133,23 +145,31 @@ const STATE_FILTERS: Array<{ id: ReportState; label: string }> = [
   { id: 'needs_review', label: 'Needs review' },
   { id: 'ready', label: 'Ready' },
   { id: 'blocked', label: 'Blocked' },
+  { id: 'stale', label: 'Stale' },
   { id: 'artifact', label: 'Artifacts' },
   { id: 'in_progress', label: 'In progress' },
 ]
 
-function clean(value: string | null | undefined, fallback = '—'): string {
+function normalizeOptionalText(value: string | null | undefined): string | null {
   const text = value?.trim()
-  return text ? text : fallback
+  if (!text || /^none$/i.test(text)) return null
+  return text
+}
+
+function clean(value: string | null | undefined, fallback = '—'): string {
+  return normalizeOptionalText(value) ?? fallback
 }
 
 function compact(value: string | null | undefined, max = 180): string {
-  const text = clean(value, '')
+  const text = normalizeOptionalText(value)
   if (!text) return 'No report body published yet.'
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
 function splitChangedFiles(value: string | null | undefined): Array<RuntimeArtifact> {
-  return clean(value, '')
+  const normalized = normalizeOptionalText(value)
+  if (!normalized) return []
+  return normalized
     .split(/\n|,/)
     .map((item) => item.trim())
     .filter(Boolean)
@@ -163,31 +183,100 @@ function splitChangedFiles(value: string | null | undefined): Array<RuntimeArtif
     }))
 }
 
+function hasRuntimeArtifacts(entry: RuntimeReportEntry): boolean {
+  return (entry.artifacts?.length ?? 0) > 0 || (entry.previews?.length ?? 0) > 0
+}
+
+function isHistoricalMission(mission: MissionSummary): boolean {
+  return Boolean(mission.archivedAt || mission.deletedAt || mission.state === 'cancelled')
+}
+
+function latestAssignmentMoment(assignment: MissionAssignment, mission: MissionSummary): number {
+  return assignment.completedAt ?? assignment.dispatchedAt ?? mission.updatedAt ?? 0
+}
+
 function stateForAssignment(assignment: MissionAssignment): Exclude<ReportState, 'all'> {
   const checkpoint = assignment.checkpoint
-  const statusText = `${assignment.state ?? ''} ${checkpoint?.stateLabel ?? ''} ${checkpoint?.checkpointStatus ?? ''}`.toLowerCase()
-  if (statusText.includes('stale')) {
+  const assignmentState = (assignment.state ?? '').toLowerCase()
+  const checkpointState = (checkpoint?.stateLabel ?? '').toLowerCase()
+  const checkpointStatus = (checkpoint?.checkpointStatus ?? '').toLowerCase()
+  if (assignmentState === 'stale' || checkpointState === 'stale' || checkpointStatus === 'stale') {
     return 'stale'
   }
   if (
-    statusText.includes('blocked') ||
-    statusText.includes('needs_input') ||
-    (checkpoint?.blocker && checkpoint.blocker !== 'none')
+    assignmentState === 'blocked' ||
+    assignmentState === 'needs_input' ||
+    checkpointState === 'blocked' ||
+    checkpointState === 'needs_input' ||
+    checkpointStatus === 'blocked' ||
+    checkpointStatus === 'needs_input' ||
+    normalizeOptionalText(checkpoint?.blocker)
   ) {
     return 'blocked'
   }
-  if (assignment.reviewRequired && ['checkpointed', 'reviewing'].includes(assignment.state ?? '')) return 'needs_review'
-  if (['done', 'complete'].includes(assignment.state ?? '') || statusText.includes('handoff') || statusText.includes('done')) return 'ready'
+  if (assignment.reviewRequired && ['checkpointed', 'reviewing'].includes(assignmentState)) return 'needs_review'
+  if (['done', 'complete', 'checkpointed'].includes(assignmentState) || checkpointState === 'handoff' || checkpointState === 'done') return 'ready'
   return 'in_progress'
 }
 
+function hasCurrentRuntimeSignal(entry: RuntimeReportEntry): boolean {
+  const runtimeState = (entry.state ?? '').toLowerCase()
+  const phase = (entry.phase ?? '').toLowerCase()
+  const checkpointStatus = (entry.checkpointStatus ?? '').toLowerCase()
+  const assignmentState = (entry.assignmentState ?? '').toLowerCase()
+  if (normalizeOptionalText(entry.assignmentStaleReason) || assignmentState === 'stale') return true
+  if (normalizeOptionalText(entry.blockedReason) || normalizeOptionalText(entry.assignmentBlocker) || entry.needsHuman) return true
+  if (['blocked', 'needs_input', 'done', 'handoff', 'in_progress'].includes(checkpointStatus)) return true
+  if (['blocked', 'needs_input', 'reviewing', 'checkpointed', 'done', 'queued', 'dispatched', 'executing', 'waiting_on_dependency'].includes(assignmentState)) return true
+  if (runtimeState && !['idle', 'offline'].includes(runtimeState)) return true
+  if (phase && !['idle', 'cancelled', 'offline'].includes(phase)) return true
+  if (normalizeOptionalText(entry.currentTask) && !(runtimeState === 'idle' && phase === 'cancelled')) return true
+  if ((normalizeOptionalText(entry.lastResult) || normalizeOptionalText(entry.lastRealResult)) && !!checkpointStatus) return true
+  return hasRuntimeArtifacts(entry)
+}
+
 function stateForRuntime(entry: RuntimeReportEntry): Exclude<ReportState, 'all'> {
-  const statusText = `${entry.assignmentState ?? ''} ${entry.dispatchState ?? ''} ${entry.checkpointStatus ?? ''} ${entry.currentTask ?? ''}`.toLowerCase()
-  if (statusText.includes('stale')) return 'stale'
-  if (entry.blockedReason || entry.assignmentBlocker || entry.assignmentStaleReason || entry.needsHuman || statusText.includes('blocked') || statusText.includes('needs_input')) return 'blocked'
-  if (statusText.includes('review')) return 'needs_review'
-  if (statusText.includes('done') || statusText.includes('handoff') || entry.lastResult || entry.lastRealResult) return 'ready'
-  if ((entry.artifacts?.length ?? 0) > 0 || (entry.previews?.length ?? 0) > 0) return 'artifact'
+  const assignmentState = (entry.assignmentState ?? '').toLowerCase()
+  const checkpointStatus = (entry.checkpointStatus ?? '').toLowerCase()
+  const runtimeState = (entry.state ?? '').toLowerCase()
+  const phase = (entry.phase ?? '').toLowerCase()
+  const staleReason = normalizeOptionalText(entry.assignmentStaleReason)
+  const blocker = normalizeOptionalText(entry.blockedReason) ?? normalizeOptionalText(entry.assignmentBlocker)
+  const reviewRequired = entry.assignmentReviewRequired === true
+
+  if (staleReason || assignmentState === 'stale') return 'stale'
+  if (
+    blocker ||
+    entry.needsHuman ||
+    checkpointStatus === 'blocked' ||
+    checkpointStatus === 'needs_input' ||
+    assignmentState === 'blocked' ||
+    assignmentState === 'needs_input'
+  ) {
+    return 'blocked'
+  }
+  if (
+    checkpointStatus === 'handoff' ||
+    (reviewRequired && ['done', 'checkpointed', 'reviewing'].includes(assignmentState)) ||
+    (reviewRequired && checkpointStatus === 'done')
+  ) {
+    return 'needs_review'
+  }
+  if (
+    checkpointStatus === 'done' ||
+    ['done', 'checkpointed'].includes(assignmentState) ||
+    phase === 'done'
+  ) {
+    return 'ready'
+  }
+  if (hasRuntimeArtifacts(entry)) return 'artifact'
+  if (
+    checkpointStatus === 'in_progress' ||
+    ['queued', 'dispatched', 'executing', 'waiting_on_dependency'].includes(assignmentState) ||
+    runtimeState === 'executing'
+  ) {
+    return 'in_progress'
+  }
   return 'in_progress'
 }
 
@@ -208,7 +297,7 @@ function stateLabel(state: Exclude<ReportState, 'all'>): string {
   }
 }
 
-export function buildSwarm2ReportRows({
+function buildHistoryReportRows({
   missions,
   runtimes,
 }: {
@@ -219,6 +308,7 @@ export function buildSwarm2ReportRows({
   const rows: Array<Swarm2ReportRow> = []
 
   for (const mission of missions) {
+    if (mission.deletedAt) continue
     for (const assignment of mission.assignments ?? []) {
       const workerId = clean(assignment.workerId, 'unknown')
       const runtime = runtimeByWorker.get(workerId)
@@ -228,6 +318,7 @@ export function buildSwarm2ReportRows({
       const inferredArtifacts = splitChangedFiles(checkpoint?.filesChanged)
       rows.push({
         id: `mission:${mission.id}:${assignment.id ?? workerId}:${assignment.state ?? 'unknown'}`,
+        scope: 'history',
         kind: 'checkpoint',
         title: clean(assignment.task, mission.title),
         missionId: mission.id,
@@ -237,14 +328,14 @@ export function buildSwarm2ReportRows({
         workerName: runtime?.displayName || workerId,
         state,
         stateLabel: stateLabel(state),
-        updatedAt: assignment.completedAt ?? mission.updatedAt ?? runtime?.lastOutputAt ?? null,
+        updatedAt: latestAssignmentMoment(assignment, mission),
         summary: compact(checkpoint?.result ?? checkpoint?.blocker ?? checkpoint?.nextAction ?? assignment.task),
-        checkpointStatus: checkpoint?.checkpointStatus ?? checkpoint?.stateLabel ?? null,
-        blocker: checkpoint?.blocker ?? null,
-        nextAction: checkpoint?.nextAction ?? null,
+        checkpointStatus: normalizeOptionalText(checkpoint?.checkpointStatus ?? checkpoint?.stateLabel),
+        blocker: normalizeOptionalText(checkpoint?.blocker),
+        nextAction: normalizeOptionalText(checkpoint?.nextAction),
         reviewRequired: assignment.reviewRequired === true,
         reviewedAt: assignment.reviewedAt ?? null,
-        reviewedBy: assignment.reviewedBy ?? null,
+        reviewedBy: normalizeOptionalText(assignment.reviewedBy),
         details: [
           { label: 'Task', value: clean(assignment.task) },
           { label: 'Result', value: clean(checkpoint?.result) },
@@ -254,6 +345,7 @@ export function buildSwarm2ReportRows({
           { label: 'Next action', value: clean(checkpoint?.nextAction) },
           { label: 'Checkpoint', value: clean(checkpoint?.checkpointStatus ?? checkpoint?.stateLabel) },
           { label: 'Reviewer', value: clean(assignment.reviewedBy) },
+          { label: 'Mission state', value: clean(mission.state) },
         ],
         artifacts: inferredArtifacts.length ? inferredArtifacts : runtime?.artifacts ?? [],
         previews: runtime?.previews ?? [],
@@ -261,53 +353,146 @@ export function buildSwarm2ReportRows({
     }
   }
 
+  return rows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.workerId.localeCompare(b.workerId))
+}
+
+export function buildSwarm2CurrentReportRows({
+  missions,
+  runtimes,
+}: {
+  missions: Array<MissionSummary>
+  runtimes: Array<RuntimeReportEntry>
+}): Array<Swarm2ReportRow> {
+  const currentAssignmentByWorker = new Map<string, { mission: MissionSummary; assignment: MissionAssignment }>()
+  for (const mission of missions) {
+    if (isHistoricalMission(mission)) continue
+    for (const assignment of mission.assignments ?? []) {
+      if (!assignment.workerId || assignment.state === 'cancelled') continue
+      const existing = currentAssignmentByWorker.get(assignment.workerId)
+      if (!existing || latestAssignmentMoment(assignment, mission) > latestAssignmentMoment(existing.assignment, existing.mission)) {
+        currentAssignmentByWorker.set(assignment.workerId, { mission, assignment })
+      }
+    }
+  }
+
+  const rows: Array<Swarm2ReportRow> = []
+  const seenWorkers = new Set<string>()
   for (const runtime of runtimes) {
-    const hasRuntimeOutput = Boolean(
-      clean(runtime.lastSummary, '') ||
-      clean(runtime.lastResult, '') ||
-      clean(runtime.blockedReason, '') ||
-      clean(runtime.lastRealSummary, '') ||
-      clean(runtime.lastRealResult, '') ||
-      (runtime.artifacts?.length ?? 0) > 0 ||
-      (runtime.previews?.length ?? 0) > 0,
-    )
-    if (!hasRuntimeOutput) continue
-    const state = stateForRuntime(runtime)
+    const currentAssignment = currentAssignmentByWorker.get(runtime.workerId)
+    const enrichedRuntime: RuntimeReportEntry = currentAssignment
+      ? {
+        ...runtime,
+        missionId: runtime.missionId ?? currentAssignment.mission.id,
+        missionTitle: runtime.missionTitle ?? currentAssignment.mission.title,
+        assignmentId: runtime.assignmentId ?? currentAssignment.assignment.id ?? null,
+        assignmentReviewRequired: runtime.assignmentReviewRequired ?? currentAssignment.assignment.reviewRequired ?? false,
+        assignmentReviewedAt: runtime.assignmentReviewedAt ?? currentAssignment.assignment.reviewedAt ?? null,
+        assignmentReviewedBy: runtime.assignmentReviewedBy ?? currentAssignment.assignment.reviewedBy ?? null,
+      }
+      : runtime
+    if (!hasCurrentRuntimeSignal(enrichedRuntime)) continue
+    const state = stateForRuntime(enrichedRuntime)
     rows.push({
-      id: `runtime:${runtime.workerId}:${runtime.lastOutputAt ?? runtime.lastSessionStartedAt ?? 'latest'}`,
-      kind: (runtime.artifacts?.length ?? 0) > 0 || (runtime.previews?.length ?? 0) > 0 ? 'artifact' : 'runtime',
-      title: clean(runtime.currentTask ?? runtime.lastRealSummary ?? runtime.lastSummary ?? runtime.lastRealResult ?? runtime.lastResult, 'Runtime output'),
-      missionId: null,
-      missionTitle: null,
-      assignmentId: null,
-      workerId: runtime.workerId,
-      workerName: runtime.displayName || runtime.workerId,
+      id: `current:${runtime.workerId}:${enrichedRuntime.assignmentId ?? enrichedRuntime.lastOutputAt ?? enrichedRuntime.lastSessionStartedAt ?? 'latest'}`,
+      scope: 'current',
+      kind: hasRuntimeArtifacts(enrichedRuntime) ? 'artifact' : 'runtime',
+      title: clean(enrichedRuntime.currentTask ?? enrichedRuntime.lastRealSummary ?? enrichedRuntime.lastSummary ?? enrichedRuntime.lastRealResult ?? enrichedRuntime.lastResult, 'Runtime output'),
+      missionId: enrichedRuntime.missionId ?? null,
+      missionTitle: enrichedRuntime.missionTitle ?? null,
+      assignmentId: enrichedRuntime.assignmentId ?? null,
+      workerId: enrichedRuntime.workerId,
+      workerName: enrichedRuntime.displayName || enrichedRuntime.workerId,
       state,
       stateLabel: stateLabel(state),
-      updatedAt: runtime.lastOutputAt ?? runtime.lastSessionStartedAt ?? null,
-      summary: compact(runtime.blockedReason ?? runtime.lastRealResult ?? runtime.lastResult ?? runtime.lastRealSummary ?? runtime.lastSummary ?? runtime.currentTask),
-      checkpointStatus: runtime.checkpointStatus ?? null,
-      blocker: runtime.blockedReason ?? null,
-      nextAction: null,
-      reviewRequired: false,
-      reviewedAt: null,
-      reviewedBy: null,
+      updatedAt: enrichedRuntime.lastOutputAt ?? enrichedRuntime.lastSessionStartedAt ?? currentAssignment?.mission.updatedAt ?? null,
+      summary: compact(enrichedRuntime.blockedReason ?? enrichedRuntime.assignmentBlocker ?? enrichedRuntime.lastRealResult ?? enrichedRuntime.lastResult ?? enrichedRuntime.lastRealSummary ?? enrichedRuntime.lastSummary ?? enrichedRuntime.currentTask),
+      checkpointStatus: normalizeOptionalText(enrichedRuntime.checkpointStatus),
+      blocker: normalizeOptionalText(enrichedRuntime.blockedReason) ?? normalizeOptionalText(enrichedRuntime.assignmentBlocker),
+      nextAction: normalizeOptionalText(enrichedRuntime.nextAction),
+      reviewRequired: enrichedRuntime.assignmentReviewRequired === true,
+      reviewedAt: enrichedRuntime.assignmentReviewedAt ?? null,
+      reviewedBy: normalizeOptionalText(enrichedRuntime.assignmentReviewedBy),
       details: [
-        { label: 'Current task', value: clean(runtime.currentTask) },
-        { label: 'Summary', value: clean(runtime.lastSummary) },
-        { label: 'Real summary', value: clean(runtime.lastRealSummary) },
-        { label: 'Result', value: clean(runtime.lastResult) },
-        { label: 'Real result', value: clean(runtime.lastRealResult) },
-        { label: 'Blocked reason', value: clean(runtime.blockedReason) },
-        { label: 'Checkpoint status', value: clean(runtime.checkpointStatus) },
-        { label: 'Recent log tail', value: compact(runtime.recentLogTail, 900) },
+        { label: 'Current task', value: clean(enrichedRuntime.currentTask) },
+        { label: 'Summary', value: clean(enrichedRuntime.lastSummary) },
+        { label: 'Real summary', value: clean(enrichedRuntime.lastRealSummary) },
+        { label: 'Result', value: clean(enrichedRuntime.lastResult) },
+        { label: 'Real result', value: clean(enrichedRuntime.lastRealResult) },
+        { label: 'Blocked reason', value: clean(enrichedRuntime.blockedReason ?? enrichedRuntime.assignmentBlocker) },
+        { label: 'Checkpoint status', value: clean(enrichedRuntime.checkpointStatus) },
+        { label: 'Next action', value: clean(enrichedRuntime.nextAction) },
+        { label: 'Recent log tail', value: compact(enrichedRuntime.recentLogTail, 900) },
       ],
-      artifacts: runtime.artifacts ?? [],
-      previews: runtime.previews ?? [],
+      artifacts: enrichedRuntime.artifacts ?? [],
+      previews: enrichedRuntime.previews ?? [],
+    })
+    seenWorkers.add(runtime.workerId)
+  }
+
+  for (const [workerId, current] of currentAssignmentByWorker) {
+    if (seenWorkers.has(workerId)) continue
+    const checkpoint = current.assignment.checkpoint
+    const state = stateForAssignment(current.assignment)
+    rows.push({
+      id: `current-fallback:${current.mission.id}:${current.assignment.id ?? workerId}`,
+      scope: 'current',
+      kind: 'checkpoint',
+      title: clean(current.assignment.task, current.mission.title),
+      missionId: current.mission.id,
+      missionTitle: current.mission.title,
+      assignmentId: current.assignment.id ?? null,
+      workerId,
+      workerName: workerId,
+      state,
+      stateLabel: stateLabel(state),
+      updatedAt: latestAssignmentMoment(current.assignment, current.mission),
+      summary: compact(checkpoint?.result ?? checkpoint?.blocker ?? checkpoint?.nextAction ?? current.assignment.task),
+      checkpointStatus: normalizeOptionalText(checkpoint?.checkpointStatus ?? checkpoint?.stateLabel),
+      blocker: normalizeOptionalText(checkpoint?.blocker),
+      nextAction: normalizeOptionalText(checkpoint?.nextAction),
+      reviewRequired: current.assignment.reviewRequired === true,
+      reviewedAt: current.assignment.reviewedAt ?? null,
+      reviewedBy: normalizeOptionalText(current.assignment.reviewedBy),
+      details: [
+        { label: 'Task', value: clean(current.assignment.task) },
+        { label: 'Result', value: clean(checkpoint?.result) },
+        { label: 'Files changed', value: clean(checkpoint?.filesChanged) },
+        { label: 'Commands run', value: clean(checkpoint?.commandsRun) },
+        { label: 'Blocker', value: clean(checkpoint?.blocker) },
+        { label: 'Next action', value: clean(checkpoint?.nextAction) },
+        { label: 'Checkpoint', value: clean(checkpoint?.checkpointStatus ?? checkpoint?.stateLabel) },
+      ],
+      artifacts: splitChangedFiles(checkpoint?.filesChanged),
+      previews: [],
     })
   }
 
   return rows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.workerId.localeCompare(b.workerId))
+}
+
+export function buildSwarm2ReportRows({
+  missions,
+  runtimes,
+}: {
+  missions: Array<MissionSummary>
+  runtimes: Array<RuntimeReportEntry>
+}): Array<Swarm2ReportRow> {
+  return [
+    ...buildSwarm2CurrentReportRows({ missions, runtimes }),
+    ...buildHistoryReportRows({ missions, runtimes }),
+  ].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.workerId.localeCompare(b.workerId))
+}
+
+export function buildSwarm2InboxLanesFromRows(rows: Array<Swarm2ReportRow>): Swarm2InboxLanes {
+  const actionable = rows
+    .filter((row): row is Swarm2InboxItem => row.scope === 'current' && !!row.missionId && (row.state === 'needs_review' || row.state === 'blocked' || row.state === 'ready' || row.state === 'stale'))
+    .map((row) => ({ ...row, lane: (row.state === 'stale' ? 'blocked' : row.state) as Swarm2InboxLaneId }))
+
+  return {
+    needs_review: actionable.filter((row) => row.lane === 'needs_review'),
+    blocked: actionable.filter((row) => row.lane === 'blocked'),
+    ready: actionable.filter((row) => row.lane === 'ready'),
+  }
 }
 
 export function buildSwarm2InboxLanes({
@@ -317,17 +502,7 @@ export function buildSwarm2InboxLanes({
   missions: Array<MissionSummary>
   runtimes: Array<RuntimeReportEntry>
 }): Swarm2InboxLanes {
-  const rows = buildSwarm2ReportRows({ missions, runtimes })
-  const actionable = rows.filter((row): row is Swarm2InboxItem => {
-    if (row.kind !== 'checkpoint' || !row.missionId) return false
-    return row.state === 'needs_review' || row.state === 'blocked' || row.state === 'ready' || row.state === 'stale'
-  }).map((row) => ({ ...row, lane: (row.state === 'stale' ? 'blocked' : row.state) as Swarm2InboxLaneId }))
-
-  return {
-    needs_review: actionable.filter((row) => row.lane === 'needs_review'),
-    blocked: actionable.filter((row) => row.lane === 'blocked'),
-    ready: actionable.filter((row) => row.lane === 'ready'),
-  }
+  return buildSwarm2InboxLanesFromRows(buildSwarm2CurrentReportRows({ missions, runtimes }))
 }
 
 function formatAge(value: number | null): string {
@@ -362,11 +537,11 @@ function statePriority(state: Exclude<ReportState, 'all'>): number {
   switch (state) {
     case 'blocked':
       return 0
-    case 'needs_review':
-      return 1
-    case 'ready':
-      return 2
     case 'stale':
+      return 1
+    case 'needs_review':
+      return 2
+    case 'ready':
       return 3
     case 'artifact':
       return 4
@@ -540,8 +715,8 @@ export function Swarm2ReportsView({
     return () => window.clearTimeout(timer)
   }, [toastMessage])
 
+  const currentRows = useMemo(() => buildSwarm2CurrentReportRows({ missions, runtimes }), [missions, runtimes])
   const rows = useMemo(() => buildSwarm2ReportRows({ missions, runtimes }), [missions, runtimes])
-  const inboxLanes = useMemo(() => buildSwarm2InboxLanes({ missions, runtimes }), [missions, runtimes])
   const workers = useMemo(() => [...new Set(rows.map((row) => row.workerId))].sort(), [rows])
   const missionOptions = useMemo(
     () => missions.map((mission) => ({ id: mission.id, label: mission.title || mission.id })),
@@ -553,13 +728,20 @@ export function Swarm2ReportsView({
     if (missionFilter !== 'all' && row.missionId !== missionFilter) return false
     return true
   })
-  const workerCards = useMemo(() => buildWorkerReportCards(filteredRows), [filteredRows])
-  const counts = rows.reduce<Record<Exclude<ReportState, 'all'>, number>>(
+  const filteredCurrentRows = currentRows.filter((row) => {
+    if (stateFilter !== 'all' && row.state !== stateFilter) return false
+    if (workerFilter !== 'all' && row.workerId !== workerFilter) return false
+    if (missionFilter !== 'all' && row.missionId !== missionFilter) return false
+    return true
+  })
+  const inboxLanes = useMemo(() => buildSwarm2InboxLanesFromRows(filteredCurrentRows), [filteredCurrentRows])
+  const workerCards = useMemo(() => buildWorkerReportCards(filteredCurrentRows), [filteredCurrentRows])
+  const counts = currentRows.reduce<Record<Exclude<ReportState, 'all'>, number>>(
     (acc, row) => {
       acc[row.state] += 1
       return acc
     },
-    { needs_review: 0, ready: 0, blocked: 0, in_progress: 0, artifact: 0 },
+    { needs_review: 0, ready: 0, blocked: 0, stale: 0, in_progress: 0, artifact: 0 },
   )
 
   function showToast(message: string) {
@@ -951,7 +1133,7 @@ export function Swarm2ReportsView({
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]', toneClass(row.state))}>{row.stateLabel}</span>
-                        <span className="text-[11px] text-[var(--theme-muted)]">{row.kind}</span>
+                        <span className="text-[11px] text-[var(--theme-muted)]">{row.scope === 'current' ? 'Current' : 'History'} · {row.kind}</span>
                         {row.checkpointStatus ? <span className="text-[11px] text-[var(--theme-muted)]">{row.checkpointStatus}</span> : null}
                         {row.reviewRequired ? <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">swarm6 gate</span> : null}
                         {row.reviewedBy ? <span className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-700">reviewed by {row.reviewedBy}</span> : null}

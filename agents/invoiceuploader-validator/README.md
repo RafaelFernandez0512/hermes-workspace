@@ -3,7 +3,7 @@
 - Profile: `invoiceuploader-validator`
 - Wrapper: `invoiceuploader-validator:smoke`
 - Role: validación y smoke checks
-- CWD: `/home/winterfell/src/InvoiceUploader`
+- CWD: `/home/winterfell/src/InvoiceUploader/InvoiceUploader-app`
 - Tools: `browser`, `terminal`, `file`, `vision`, `session_search`, `skills`
 - Skills autorizadas: `browser-harness-power-use`, `systematic-debugging`
 
@@ -11,7 +11,7 @@ Verifica builds, flujos visibles y riesgos de regresión en facturas, aprobacion
 
 ## Validación frontend React + Vite
 
-- CWD base: `/home/winterfell/src/InvoiceUploader`.
+- CWD base: `/home/winterfell/src/InvoiceUploader/InvoiceUploader-app`.
 - Revisar scripts disponibles en `InvoiceUploader-app/package.json`.
 - Build obligatorio para detectar errores: `cd InvoiceUploader-app && npm run build`.
 - Si existe script de tests, ejecutarlo además del build; si no existe, reportar que no hay test script definido.

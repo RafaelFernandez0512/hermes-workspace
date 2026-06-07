@@ -28,6 +28,7 @@ import {
 import { formatSwarmWorkerLabel, resolveSwarmWorkerDisplayName, rosterByWorkerId } from '../../server/swarm-roster'
 import { readSwarmMode, writeSwarmMode } from '../../server/swarm-mode'
 import { getMissionAssignmentContext, reconcileSwarmMissions } from '../../server/swarm-missions'
+import { reconcileExitedOneShotRuntime } from '../../server/swarm-oneshot-watchdog'
 import type {SwarmArtifactMetadata, SwarmBoundary, SwarmCheckpointStatus, SwarmDispatchMetadata, SwarmLifecycleMetadata, SwarmPreviewMetadata, SwarmRuntimeSource, SwarmSessionMetadata, SwarmTaskMetadata, SwarmTerminalKind, SwarmWorkerState} from '../../server/swarm-foundation';
 
 type RuntimeEntry = {
@@ -51,7 +52,13 @@ type RuntimeEntry = {
   checkpointStatus: SwarmCheckpointStatus
   needsHuman: boolean
   blockedReason: string | null
+  missionId: string | null
+  missionTitle: string | null
+  assignmentId: string | null
   assignmentState: string | null
+  assignmentReviewRequired: boolean
+  assignmentReviewedAt: number | null
+  assignmentReviewedBy: string | null
   assignmentBlocker: string | null
   assignmentStaleReason: string | null
   assignmentDependsOn: Array<string>
@@ -237,9 +244,15 @@ async function buildEntry(
     checkpointStatus: runtime.checkpointStatus,
     needsHuman: runtime.needsHuman,
     blockedReason: runtime.blockedReason,
-    assignmentState: missionContext.assignment?.state ?? null,
-    assignmentBlocker: missionContext.assignment?.blockerReason ?? null,
-    assignmentStaleReason: missionContext.assignment?.staleReason ?? null,
+    missionId: missionContext.mission?.id ?? rawContext.missionId ?? null,
+    missionTitle: missionContext.mission?.title ?? null,
+    assignmentId: missionContext.assignment?.id ?? rawContext.assignmentId ?? null,
+    assignmentState: missionContext.lifecycle?.state ?? missionContext.assignment?.state ?? null,
+    assignmentReviewRequired: missionContext.assignment?.reviewRequired === true,
+    assignmentReviewedAt: missionContext.assignment?.reviewedAt ?? null,
+    assignmentReviewedBy: missionContext.assignment?.reviewedBy ?? null,
+    assignmentBlocker: missionContext.lifecycle?.blockerReason ?? missionContext.assignment?.blockerReason ?? null,
+    assignmentStaleReason: missionContext.lifecycle?.staleReason ?? missionContext.assignment?.staleReason ?? null,
     assignmentDependsOn: missionContext.assignment?.dependsOn ?? [],
     dispatchState: missionContext.mission?.dispatchState ?? null,
     runId: rawContext.runId ?? missionContext.mission?.runId ?? null,
@@ -285,8 +298,14 @@ export const Route = createFileRoute('/api/swarm-runtime')({
         if (!isAuthenticated(request)) {
           return json({ error: 'Unauthorized' }, { status: 401 })
         }
-        reconcileSwarmMissions()
         const ids = listWorkerIds()
+        for (const workerId of ids) {
+          reconcileExitedOneShotRuntime({
+            workerId,
+            profilePath: join(getProfilesDir(), workerId),
+          })
+        }
+        reconcileSwarmMissions()
         const tmuxAvailable = await tmuxIsInstalled()
         const entries = await Promise.all(ids.map((id) => buildEntry(id, tmuxAvailable)))
         return json({

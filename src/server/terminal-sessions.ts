@@ -4,7 +4,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
@@ -53,6 +53,114 @@ const __dirname_resolved =
     : dirname(fileURLToPath(import.meta.url))
 const PTY_HELPER = resolve(__dirname_resolved, 'pty-helper.py')
 
+function isTruthy(value?: string): boolean {
+  switch ((value ?? '').trim().toLowerCase()) {
+    case '1':
+    case 'true':
+    case 'yes':
+    case 'on':
+      return true
+    default:
+      return false
+  }
+}
+
+function shellQuote(value: string): string {
+  if (value.length === 0) return "''"
+  return `'${value.replace(/'/g, `'"'"'`)}'`
+}
+
+function shellJoin(parts: Array<string>): string {
+  return parts.map(shellQuote).join(' ')
+}
+
+export function buildHostTerminalCommand(params: {
+  sessionId: string
+  command: Array<string>
+  cols: number
+  rows: number
+  image?: string
+  home?: string
+  user?: string
+  cwd?: string
+  path?: string
+}): Array<string> {
+  const image = params.image?.trim() || 'debian:bookworm-slim'
+  const home = params.home?.trim() || '/home/winterfell'
+  const user = params.user?.trim() || 'winterfell'
+  const cwd = params.cwd?.trim() || home
+  const path =
+    params.path?.trim() ||
+    '/home/winterfell/.local/bin:/home/winterfell/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin'
+  const command = params.command.length
+    ? params.command
+    : [process.env.SHELL ?? '/bin/bash', '-l']
+  const mountedCwd = cwd.startsWith('/host/')
+    ? cwd
+    : `/host${cwd.startsWith('/') ? cwd : `/${cwd.replace(/^\/+/, '')}`}`
+
+  const hostCommand = [
+    'chroot',
+    '/host',
+    '/usr/bin/env',
+    '-i',
+    `HOME=${home}`,
+    `USER=${user}`,
+    `LOGNAME=${user}`,
+    'SHELL=/bin/bash',
+    'TERM=xterm-256color',
+    'COLORTERM=truecolor',
+    `COLUMNS=${String(params.cols)}`,
+    `LINES=${String(params.rows)}`,
+    `PATH=${path}`,
+    '/bin/bash',
+    '-lc',
+    `exec ${shellJoin(command)}`,
+  ]
+
+  let socketGid: number | null = null
+  try {
+    socketGid = statSync('/var/run/docker.sock').gid
+  } catch {
+    socketGid = null
+  }
+
+  const dockerArgs = [
+    'docker',
+    'run',
+    '--rm',
+    '--interactive',
+    '--tty',
+    '--user',
+    '0:0',
+    ...(socketGid !== null ? ['--group-add', String(socketGid)] : []),
+    '--name',
+    `hermes-terminal-${params.sessionId.slice(0, 12)}`,
+    '--volume',
+    '/:/host:rw,rslave',
+    '--volume',
+    '/var/run/docker.sock:/var/run/docker.sock',
+    '--workdir',
+    mountedCwd,
+    '--env',
+    'TERM=xterm-256color',
+    '--env',
+    'COLORTERM=truecolor',
+    '--env',
+    `COLUMNS=${String(params.cols)}`,
+    '--env',
+    `LINES=${String(params.rows)}`,
+    '--env',
+    'DOCKER_HOST=unix:///var/run/docker.sock',
+    image,
+    '/bin/sh',
+    '-lc',
+    shellJoin(hostCommand),
+  ]
+
+  return ['/bin/sh', '-lc', shellJoin(dockerArgs)]
+}
+
 export function createTerminalSession(params: {
   command?: Array<string>
   cwd?: string
@@ -70,9 +178,24 @@ export function createTerminalSession(params: {
       : process.platform === 'darwin'
         ? '/bin/zsh'
         : '/bin/bash'
-  const command = params.command?.length
+  const baseCommand = params.command?.length
     ? params.command
     : [process.env.SHELL ?? defaultShell]
+  const hostTerminalMode =
+    process.platform !== 'win32' && isTruthy(process.env.HERMES_TERMINAL_HOST_MODE)
+  const command = hostTerminalMode
+    ? buildHostTerminalCommand({
+        sessionId,
+        command: baseCommand,
+        cols: params.cols ?? 80,
+        rows: params.rows ?? 24,
+        image: process.env.HERMES_TERMINAL_HOST_IMAGE,
+        home: process.env.HERMES_TERMINAL_HOST_HOME,
+        user: process.env.HERMES_TERMINAL_HOST_USER,
+        cwd: process.env.HERMES_TERMINAL_HOST_CWD,
+        path: process.env.HERMES_TERMINAL_HOST_PATH,
+      })
+    : baseCommand
   let cwd = params.cwd ?? home
   if (cwd.startsWith('~')) {
     cwd = cwd.replace('~', home)

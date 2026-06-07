@@ -3,18 +3,18 @@ import { json } from '@tanstack/react-start'
 import { isAuthenticated } from '../../server/auth-middleware'
 import {
   autoSweepLifecycle,
+  completeSwarm,
   getSwarmLifecycleStatus,
-  notifyHandoffWritten,
-  renewWorker,
-  requestWorkerHandoff,
-  startOrResumeSwarm,
-  pauseSwarm,
-  resumeSwarm,
   markBlocked,
   markNeedsReview,
   markReady,
-  completeSwarm,
+  notifyHandoffWritten,
+  pauseSwarm,
   recoverRuntime,
+  renewWorker,
+  requestWorkerHandoff,
+  resumeSwarm,
+  startOrResumeSwarm,
 } from '../../server/swarm-lifecycle'
 import { listSwarmWorkerIds } from '../../server/swarm-foundation'
 import { isSwarmWorkerId } from '../../server/swarm-roster'
@@ -31,7 +31,7 @@ function validWorkerId(value: unknown): string | null {
 export const Route = createFileRoute('/api/swarm-lifecycle')({
   server: {
     handlers: {
-      GET: async ({ request }) => {
+      GET: ({ request }) => {
         if (!isAuthenticated(request)) return json({ ok: false, error: 'Unauthorized' }, { status: 401 })
         const url = new URL(request.url)
         const requested = validWorkerId(url.searchParams.get('workerId'))
@@ -93,8 +93,8 @@ export const Route = createFileRoute('/api/swarm-lifecycle')({
           return json({ ok: true, workerId, action })
         }
         if (action === 'recover-runtime') {
-          await recoverRuntime(workerId)
-          return json({ ok: true, workerId, action })
+          const sweep = await recoverRuntime(workerId)
+          return json({ ok: true, workerId, action, sweep })
         }
         return json({ ok: false, error: 'Unsupported action' }, { status: 400 })
       },

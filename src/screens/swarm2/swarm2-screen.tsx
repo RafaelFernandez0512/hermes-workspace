@@ -7,8 +7,8 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
 } from 'react'
+import type { CSSProperties } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
@@ -17,20 +17,22 @@ import {
   MessageMultiple01Icon,
   UserMultipleIcon,
 } from '@hugeicons/core-free-icons'
-import type { CrewMember } from '@/hooks/use-crew-status'
-import { getOnlineStatus, useCrewStatus } from '@/hooks/use-crew-status'
-import { toast } from '@/components/ui/toast'
 import { OperationalWorkerCard } from './operational-worker-card'
 import { Swarm2OrchestratorCard } from './swarm2-orchestrator-card'
 import { Swarm2Wires } from './swarm2-wires'
 import { Swarm2ActivityFeed } from './swarm2-activity-feed'
 import { Swarm2KanbanBoard } from './swarm2-kanban-board'
-import { Swarm2ReportsView, buildSwarm2InboxLanes, type Swarm2InboxItem } from './swarm2-reports-view'
+import { Swarm2ReportsView, buildSwarm2InboxLanes } from './swarm2-reports-view'
+import type { Swarm2InboxItem } from './swarm2-reports-view'
 import { IncidentLayout } from './incident-layout'
 import { RouterChat } from '@/components/swarm/router-chat'
 import { SwarmTerminal } from '@/components/swarm/swarm-terminal'
 import { WorkflowHelpModal } from '@/components/workflow-help-modal'
 import { cn } from '@/lib/utils'
+import { getOnlineStatus, useCrewStatus } from '@/hooks/use-crew-status'
+import type { CrewMember } from '@/hooks/use-crew-status'
+import { toast } from '@/components/ui/toast'
+import { isRealIncidentStatus } from '@/lib/swarm/canonical-state'
 import type { SwarmStatusPayload } from '@/lib/swarm/canonical-state'
 
 const SWARM2_ROOM_STORAGE_KEY = 'claude-swarm2-room-v1'
@@ -154,7 +156,13 @@ type RuntimeEntry = {
   lastSummary?: string | null
   lastResult?: string | null
   blockedReason?: string | null
+  missionId?: string | null
+  missionTitle?: string | null
+  assignmentId?: string | null
   assignmentState?: string | null
+  assignmentReviewRequired?: boolean | null
+  assignmentReviewedAt?: number | null
+  assignmentReviewedBy?: string | null
   assignmentBlocker?: string | null
   assignmentStaleReason?: string | null
   assignmentDependsOn?: Array<string>
@@ -210,12 +218,16 @@ type SwarmMissionSummary = {
   id: string
   title: string
   state: string
+  archivedAt?: number | null
+  deletedAt?: number | null
   assignments?: Array<{
     id?: string
     state: string
     task?: string
     workerId?: string
     reviewRequired?: boolean
+    reviewedAt?: number | null
+    reviewedBy?: string | null
     completedAt?: number | null
     dispatchedAt?: number | null
     checkpoint?: {
@@ -1067,6 +1079,16 @@ export function Swarm2Screen() {
   })
   const incidentStatus = incidentStatusQuery.data ?? null
   const incidentSwarmId = incidentStatus?.swarmId ?? 'default'
+  const hasIncident = !!incidentStatus && isRealIncidentStatus(incidentStatus.status)
+  const [incidentCollapsed, setIncidentCollapsed] = useState(false)
+  const lastIncidentVisibleRef = useRef(false)
+
+  useEffect(() => {
+    if (hasIncident && !lastIncidentVisibleRef.current) {
+      setIncidentCollapsed(false)
+    }
+    lastIncidentVisibleRef.current = hasIncident
+  }, [hasIncident])
 
   const startAgentSession = useCallback(
     async (workerId: string) => {
@@ -1698,10 +1720,30 @@ export function Swarm2Screen() {
           />
         ) : null}
 
-        {/* Incident Console panel — shown when canonical status is available */}
-        {incidentStatus ? (
-          <div className="mt-4 rounded-xl border border-[var(--theme-border)] bg-[var(--theme-card)] overflow-hidden">
-            <IncidentLayout swarmId={incidentSwarmId} status={incidentStatus} />
+        {/* Incident Console panel — shown only for real incidents */}
+        {hasIncident ? (
+          <div className="mt-4 overflow-hidden rounded-xl border border-[var(--theme-border)] bg-[var(--theme-card)]">
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--theme-border)] px-4 py-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--theme-muted,var(--color-primary-700))]">
+                  Incident Console
+                </p>
+                <p className="mt-1 text-sm text-[var(--theme-muted,var(--color-primary-600))]">
+                  {incidentStatus.blockedReason ?? 'Real incident detected.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIncidentCollapsed((value) => !value)}
+                aria-expanded={!incidentCollapsed}
+                className="rounded-lg border border-[var(--theme-border)] bg-[var(--theme-card2)] px-3 py-1.5 text-sm font-medium text-[var(--theme-text)] hover:bg-[var(--theme-card)]"
+              >
+                {incidentCollapsed ? 'Expand' : 'Collapse'}
+              </button>
+            </div>
+            {!incidentCollapsed ? (
+              <IncidentLayout swarmId={incidentSwarmId} status={incidentStatus} />
+            ) : null}
           </div>
         ) : null}
       </div>
