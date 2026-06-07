@@ -63,6 +63,7 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { applyTheme, useSettingsStore } from '@/hooks/use-settings'
+import { TargetSelector } from '@/components/workspace-targets/target-selector'
 
 type WorkspaceStats = Record<string, unknown>
 
@@ -1233,6 +1234,7 @@ function ChatSidebarComponent({
                   strokeWidth={1.5}
                 />
               </button>
+              <TargetSelector />
               <ThemeToggleMini />
             </div>
           )}

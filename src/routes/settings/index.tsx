@@ -45,6 +45,7 @@ import { LogoLoader } from '@/components/logo-loader'
 import { BrailleSpinner } from '@/components/ui/braille-spinner'
 import { ThreeDotsSpinner } from '@/components/ui/three-dots-spinner'
 // useWorkspaceStore removed — hamburger eliminated on mobile
+import { WorkspaceTargetsSection } from '@/screens/settings/workspace-targets-section'
 
 const VALID_SECTION_IDS: ReadonlyArray<SettingsNavId> = SETTINGS_NAV_ITEMS.map(
   (item) => item.id,
@@ -349,6 +350,9 @@ function SettingsRoute() {
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {/* -- Connection ------------------ */}
           {activeSection === 'connection' && <ConnectionSection />}
+
+          {/* -- Workspace Targets ----------- */}
+          {activeSection === 'workspace-targets' && <WorkspaceTargetsSection />}
 
           {/* ── Hermes Agent ──────────────────────────────────── */}
           {activeSection === 'claude' && (

@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 
 export type SettingsNavId =
   | 'connection'
+  | 'workspace-targets'
   | 'claude'
   | 'agent'
   | 'voice'
@@ -16,6 +17,7 @@ type NavItem = { id: SettingsNavId; label: string }
 
 export const SETTINGS_NAV_ITEMS: Array<NavItem> = [
   { id: 'connection', label: 'Connection' },
+  { id: 'workspace-targets', label: 'Workspace Targets' },
   { id: 'claude', label: 'Model & Provider' },
   { id: 'agent', label: 'Agent Behavior' },
   { id: 'voice', label: 'Voice' },

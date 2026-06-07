@@ -324,7 +324,8 @@ export async function dashboardAuthHeaders(options?: {
 
 function withDashboardBase(path: string): string {
   if (/^https?:\/\//i.test(path)) return path
-  return `${CLAUDE_DASHBOARD_URL}${path.startsWith('/') ? path : `/${path}`}`
+  const base = getActiveDashboardUrl()
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`
 }
 
 export async function dashboardFetch(
